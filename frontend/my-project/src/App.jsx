@@ -7,6 +7,7 @@ import StudentPreferences from './pages/student/Preferences'
 import StudentStatus from './pages/student/Status'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminReports from './pages/admin/Reports'
+import AdminAnalytics from './pages/admin/Analytics'
 import { getUser } from './services/auth'
 
 function PrivateRoute({ children, allowedRoles }) {
@@ -61,6 +62,11 @@ function App() {
           <Route path="admin/reports" element={
             <PrivateRoute allowedRoles={['admin']}>
               <AdminReports />
+            </PrivateRoute>
+          } />
+          <Route path="admin/analytics" element={
+            <PrivateRoute allowedRoles={['admin']}>
+              <AdminAnalytics />
             </PrivateRoute>
           } />
 
