@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-primary text-white rounded-lg hover:bg-secondary transition-colors;
+  }
+  .card {
+    @apply p-6 bg-white rounded-lg shadow-lg;
+  }
+}
