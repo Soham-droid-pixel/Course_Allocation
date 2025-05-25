@@ -10,17 +10,34 @@ class StudentPreference(Document):
     preferences: Dict[CourseCategory, CourseChoice]
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None
+    enrollment_status: str = "pending"  # pending, allocated, waitlisted
     
     class Settings:
         name = "student_preferences"
+        indexes = [
+            [("created_at", -1)],
+            [("enrollment_status", 1)]
+        ]
+
+class CourseEnrollment(BaseModel):
+    course_id: str
+    name: str
+    capacity: int = 60
+    min_enrollment: int = 20
+    current_enrollment: int = 0
+    enrolled_students: List[str] = []
+    waitlist: List[str] = []
 
 class AllocationResult(Document):
     allocation_id: Annotated[str, Field(index=True, unique=True)]
-    student_allocations: Dict[str, Dict[CourseCategory, str]]  # student_id -> {category: course_id}
-    course_enrollments: Dict[str, List[str]]  # course_id -> [student_ids]
+    student_allocations: Dict[str, Dict[CourseCategory, str]]
+    course_enrollments: Dict[str, CourseEnrollment]
     created_at: datetime = Field(default_factory=datetime.utcnow)
     status: str = "completed"
     issues: List[str] = []
 
     class Settings:
         name = "allocation_results"
+        indexes = [
+            [("created_at", -1)]
+        ]

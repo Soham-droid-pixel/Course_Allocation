@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import CourseCard from '../../components/student/CourseCard'
 import { COURSES } from '../../utils/constants'
 
+
 function StudentDashboard() {
   const [allocatedCourses, setAllocatedCourses] = useState([])
 

@@ -1,53 +1,86 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse, JSONResponse
-import logging
-import os
-import uuid
-import tempfile
-import asyncio
 from typing import List, Optional
+import uuid
+import os
+import asyncio
+from datetime import datetime
+import logging
 
-from app.api.models import AllocationRequest, AllocationResponse, DownloadFormat, StudentPreference
-from app.services.allocation import allocate_courses
-from app.services.report import generate_allocation_report
-from app.core.exceptions import CourseAllocationException
-from ..db.models import AllocationResult
+from .models import StudentPreference, AllocationRequest, AllocationResponse, DownloadFormat
+from ..db.models import StudentPreference as StudentPreferenceDB, AllocationResult
+from ..core.exceptions import CourseAllocationException
+from ..services.allocation import allocate_courses
+from ..services.report import generate_allocation_report
 
 logger = logging.getLogger("course_allocation_service")
-
 router = APIRouter()
 
-# In-memory storage for allocation results (in production, use a database or cache)
-allocations_store = {}
+@router.post("/preferences/submit", status_code=201)
+async def submit_preferences(preference: StudentPreference):
+    try:
+        db_preference = StudentPreferenceDB(
+            student_id=preference.student_id,
+            name=preference.name,
+            preferences=preference.preferences,
+            created_at=datetime.utcnow()
+        )
+        await db_preference.insert()
+        logger.info(f"Preferences submitted for student {preference.student_id}")
+        return {"message": "Preferences submitted successfully"}
+    except Exception as e:
+        logger.error(f"Error submitting preferences: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/preferences", response_model=List[StudentPreference])
+async def get_all_preferences():
+    try:
+        preferences = await StudentPreferenceDB.find_all().to_list()
+        logger.info(f"Retrieved {len(preferences)} student preferences")
+        return preferences
+    except Exception as e:
+        logger.error(f"Error retrieving preferences: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/allocate", response_model=AllocationResponse)
 async def allocate(request: AllocationRequest):
-    """
-    Allocate courses to students based on their preferences.
-    """
     try:
-        logger.info(f"Processing allocation request for {len(request.students)} students")
+        logger.info("Starting course allocation process")
+        preferences = await StudentPreferenceDB.find_all().to_list()
         
-        # Perform course allocation
-        allocation_result = allocate_courses(request.students)
+        if not preferences:
+            raise CourseAllocationException("No preferences found for allocation")
+
+        allocation_result = allocate_courses(preferences)
         
-        # Store allocation result with a unique ID
         allocation_id = str(uuid.uuid4())
-        allocations_store[allocation_id] = allocation_result
+        db_allocation = AllocationResult(
+            allocation_id=allocation_id,
+            student_allocations={
+                student.student_id: student.allocations 
+                for student in allocation_result.student_allocations
+            },
+            course_enrollments={
+                course_id: course.students 
+                for course_id, course in allocation_result.course_summaries.items()
+            },
+            created_at=datetime.utcnow(),
+            status="completed",
+            issues=allocation_result.issues
+        )
+        await db_allocation.insert()
         
-        # Add allocation ID to response
-        response_data = allocation_result.dict()
-        response_data["allocation_id"] = allocation_id
-        
-        logger.info(f"Allocation completed successfully. Allocation ID: {allocation_id}")
-        return response_data
-        
+        logger.info(f"Allocation completed. ID: {allocation_id}")
+        return {
+            "allocation_id": allocation_id,
+            **allocation_result.dict()
+        }
     except CourseAllocationException as e:
         logger.error(f"Allocation error: {str(e)}")
-        raise
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.exception("Unexpected error during allocation")
-        raise CourseAllocationException(detail=f"Allocation failed: {str(e)}")
+        logger.error(f"Unexpected error during allocation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/download/{allocation_id}")
 async def download_report(
@@ -55,92 +88,56 @@ async def download_report(
     background_tasks: BackgroundTasks,
     format: DownloadFormat = Query(DownloadFormat.EXCEL)
 ):
-    """
-    Generate and download the allocation report in Excel or CSV format.
-    """
     try:
-        if allocation_id not in allocations_store:
+        logger.info(f"Generating report for allocation {allocation_id}")
+        allocation = await AllocationResult.find_one(
+            {"allocation_id": allocation_id}
+        )
+        if not allocation:
             raise HTTPException(status_code=404, detail="Allocation result not found")
-        
-        allocation_result = allocations_store[allocation_id]
-        
-        # Create temp file with unique name
-        temp_dir = tempfile.gettempdir()
+
         file_extension = 'xlsx' if format == DownloadFormat.EXCEL else 'csv'
-        temp_file = os.path.join(temp_dir, f'course_allocation_{allocation_id}.{file_extension}')
+        filename = f'course_allocation_{allocation_id}.{file_extension}'
         
-        logger.info(f"Creating report at: {temp_file}")
-        
-        # Generate report
-        generate_allocation_report(allocation_result, temp_file, format)
-        
-        # Schedule file cleanup with delay
-        async def delete_file(path: str, delay: int = 5):
+        # Use temp directory for file storage
+        temp_dir = os.path.join(os.getcwd(), 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+        file_path = os.path.join(temp_dir, filename)
+
+        # Convert DB model to API model for report generation
+        api_allocation = AllocationResponse(
+            student_allocations=[
+                StudentPreference(student_id=sid, allocations=alloc)
+                for sid, alloc in allocation.student_allocations.items()
+            ],
+            course_summaries={
+                cid: {"students": students}
+                for cid, students in allocation.course_enrollments.items()
+            },
+            issues=allocation.issues
+        )
+
+        generate_allocation_report(api_allocation, file_path, format)
+
+        async def cleanup_file(path: str, delay: int = 5):
             await asyncio.sleep(delay)
             try:
                 if os.path.exists(path):
                     os.unlink(path)
+                    logger.info(f"Cleaned up temporary file: {path}")
             except Exception as e:
-                logger.error(f"Error deleting temporary file {path}: {str(e)}")
-        
-        background_tasks.add_task(delete_file, temp_file)
-        
-        logger.info(f"Allocation report generated: {temp_file}")
+                logger.error(f"Error cleaning up file {path}: {str(e)}")
+
+        background_tasks.add_task(cleanup_file, file_path)
+
         return FileResponse(
-            path=temp_file,
-            filename=f'course_allocation_{allocation_id}.{file_extension}',
+            path=file_path,
+            filename=filename,
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 if format == DownloadFormat.EXCEL else 'text/csv'
         )
-    
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("Error generating report")
+        logger.error(f"Error generating report: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
-
-@router.post("/preferences")
-async def submit_preferences(preference: StudentPreference):
-    try:
-        await preference.insert()
-        return {"status": "success", "message": "Preferences submitted successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@router.get("/preferences", response_model=List[StudentPreference])
-async def get_all_preferences():
-    preferences = await StudentPreference.find_all().to_list()
-    return preferences
-
-@router.get("/status/{student_id}")
-async def get_student_status(student_id: str):
-    # Find latest allocation that includes this student
-    allocation = await AllocationResult.find_one({
-        f"student_allocations.{student_id}": {"$exists": True}
-    }, sort=[("created_at", -1)])
-    
-    if not allocation:
-        raise HTTPException(status_code=404, detail="No allocation found for student")
-    
-    return {
-        "allocation_id": allocation.allocation_id,
-        "allocations": allocation.student_allocations[student_id]
-    }
-
-@router.post("/allocate")
-async def trigger_allocation():
-    # Get all student preferences
-    preferences = await StudentPreference.find_all().to_list()
-    
-    if not preferences:
-        raise HTTPException(status_code=400, detail="No preferences found")
-    
-    # Your existing allocation logic here...
-    # Instead of storing in memory, save to MongoDB:
-    allocation_id = str(uuid.uuid4())
-    result = AllocationResult(
-        allocation_id=allocation_id,
-        student_allocations={},  # Fill with actual allocations
-        course_enrollments={},   # Fill with actual enrollments
-    )
-    await result.insert()
-    
-    return {"allocation_id": allocation_id}
