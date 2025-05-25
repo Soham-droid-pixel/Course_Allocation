@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Logging configuration
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     
+    # MongoDB settings
+    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+    DB_NAME: str = "course_allocation"
+    
     class Config:
         env_file = ".env"
 
