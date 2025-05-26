@@ -7,11 +7,12 @@ import asyncio
 from datetime import datetime
 import logging
 
-from .models import StudentPreference, AllocationRequest, AllocationResponse, DownloadFormat
+from .models import StudentPreference, AllocationRequest, AllocationResponse, DownloadFormat, CourseCategory
 from ..db.models import StudentPreference as StudentPreferenceDB, AllocationResult
 from ..core.exceptions import CourseAllocationException
 from ..services.allocation import allocate_courses
 from ..services.report import generate_allocation_report
+
 
 logger = logging.getLogger("course_allocation_service")
 router = APIRouter()
@@ -50,6 +51,17 @@ async def allocate(request: AllocationRequest):
         
         if not preferences:
             raise CourseAllocationException("No preferences found for allocation")
+
+        # Validate MDM selections
+        invalid_preferences = [
+            p.student_id for p in preferences 
+            if not p.preferences.get(CourseCategory.MDM.value, {}).get('choice1')
+        ]
+        
+        if invalid_preferences:
+            raise CourseAllocationException(
+                f"Missing MDM selection for students: {', '.join(invalid_preferences)}"
+            )
 
         allocation_result = allocate_courses(preferences)
         

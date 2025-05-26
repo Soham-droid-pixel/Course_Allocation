@@ -35,6 +35,19 @@ class StudentPreference(BaseModel):
 class AllocationRequest(BaseModel):
     students: List[StudentPreference]
 
+    @validator('students')
+    def validate_student_preferences(cls, students):
+        if not students:
+            raise ValueError("No students provided for allocation")
+        
+        for student in students:
+            # Validate MDM selection
+            mdm_choice = student.preferences.get(CourseCategory.MDM)
+            if not mdm_choice or not mdm_choice.choice1:
+                raise ValueError(f"Student {student.student_id}: MDM course selection (choice1) is mandatory")
+        
+        return students
+
 class StudentAllocation(BaseModel):
     student_id: str
     name: str

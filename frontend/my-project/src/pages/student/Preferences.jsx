@@ -1,17 +1,17 @@
-import { useState } from 'react'
-import { toast } from 'react-hot-toast'
-import CourseCard from '../../components/student/CourseCard'
-import { submitPreferences } from '../../services/api'
+import { useState } from 'react';
+import { toast } from 'react-hot-toast';
+import CourseCard from '../../components/student/CourseCard';
+import { submitPreferences } from '../../services/api';
 
 const CourseCategory = {
   PECL1: 'PECL1',
   PECL2: 'PECL2',
-  PROGRAM_ELECTIVE: 'PROGRAM_ELECTIVE',
-  OPEN_ELECTIVE: 'OPEN_ELECTIVE',
-  HONORS: 'HONORS',
-  MINOR: 'MINOR',
+  PROGRAM_ELECTIVE: 'Program Elective',
+  OPEN_ELECTIVE: 'Open Elective',
+  HONORS: 'Honors',
+  MINOR: 'Minor',
   MDM: 'MDM'
-}
+};
 
 const COURSES = {
   [CourseCategory.PECL1]: [
@@ -60,63 +60,111 @@ const COURSES = {
   [CourseCategory.MDM]: [
     { id: 'MDM1', name: 'Emotiinal and Spiritual Intelligence', credits: 1 },
     { id: 'MDM2', name: 'Health,Wellness and Pyschology', credits: 1 }
-    
   ]
 }
 
 function Preferences() {
   const [preferences, setPreferences] = useState(
-    Object.keys(CourseCategory).reduce((acc, cat) => ({ ...acc, [cat]: [] }), {})
-  )
+    Object.values(CourseCategory).reduce((acc, cat) => ({
+      ...acc,
+      [cat]: []
+    }), {})
+  );
 
-  const handleSelect = (courseType, course) => {
-    setPreferences(prev => {
-      const currentPrefs = [...prev[courseType]]
-      const index = currentPrefs.findIndex(c => c.id === course.id)
-      
-      // Maximum 2 choices per category
-      if (index === -1) {
-        if (currentPrefs.length < 2) {
-          currentPrefs.push(course)
-        } else {
-          toast.error(`Maximum 2 choices allowed for ${courseType}`)
-          return prev
-        }
-      } else {
-        currentPrefs.splice(index, 1)
+  const validatePreferences = () => {
+    const errors = [];
+
+    // MDM mandatory, exactly 1 choice
+    if ((preferences[CourseCategory.MDM]?.length || 0) !== 1) {
+      errors.push('Exactly one MDM course selection is mandatory');
+    }
+
+    // Required categories: max 2 choices each, at least one choice
+    const requiredCategories = [
+      CourseCategory.PECL1,
+      CourseCategory.PECL2,
+      CourseCategory.PROGRAM_ELECTIVE,
+      CourseCategory.OPEN_ELECTIVE,
+    ];
+
+    requiredCategories.forEach(category => {
+      if (!preferences[category]?.length) {
+        errors.push(`At least one choice required for ${category}`);
+      } else if (preferences[category].length > 2) {
+        errors.push(`Maximum 2 choices allowed for ${category}`);
       }
+    });
 
-      return { ...prev, [courseType]: currentPrefs }
-    })
-  }
+    // Honors and Minor: max 1 choice total combined, or zero
+    const honorsCount = preferences[CourseCategory.HONORS]?.length || 0;
+    const minorCount = preferences[CourseCategory.MINOR]?.length || 0;
+    if (honorsCount + minorCount > 1) {
+      errors.push('You can select only one course between Honors and Minor');
+    }
+
+    // Max 1 choice per MDM enforced above, but also check
+    if ((preferences[CourseCategory.MDM]?.length || 0) > 1) {
+      errors.push('Only one MDM choice allowed');
+    }
+
+    return errors;
+  };
 
   const handleSubmit = async () => {
     try {
-      // Validate MDM selection is mandatory
-      if (preferences[CourseCategory.MDM].length === 0) {
-        throw new Error('MDM course selection is mandatory')
+      const errors = validatePreferences();
+      if (errors.length > 0) {
+        errors.forEach(error => toast.error(error));
+        return;
       }
 
-      // Format preferences for API
-      const formattedPreferences = Object.entries(preferences).reduce((acc, [category, selected]) => ({
-        ...acc,
-        [category]: {
-          choice1: selected[0]?.id || null,
-          choice2: selected[1]?.id || null
-        }
-      }), {})
-
-      await submitPreferences({
-        student_id: localStorage.getItem('studentId'),
-        name: localStorage.getItem('studentName'),
-        preferences: formattedPreferences
-      })
-
-      toast.success('Preferences submitted successfully!')
+      await submitPreferences(preferences);
+      toast.success('Preferences submitted successfully!');
     } catch (error) {
-      toast.error(error.message)
+      toast.error(error.message);
     }
-  }
+  };
+
+  const handleSelect = (courseType, course) => {
+    setPreferences(prev => {
+      const currentPrefs = [...(prev[courseType] || [])];
+      const index = currentPrefs.findIndex(c => c.id === course.id);
+
+      if (index === -1) {
+        // Adding a new choice
+
+        if (
+          [CourseCategory.PECL1, CourseCategory.PECL2, CourseCategory.PROGRAM_ELECTIVE, CourseCategory.OPEN_ELECTIVE].includes(courseType)
+        ) {
+          if (currentPrefs.length >= 2) {
+            toast.error(`Maximum 2 choices allowed for ${courseType}`);
+            return prev;
+          }
+        } else if (
+          [CourseCategory.HONORS, CourseCategory.MINOR].includes(courseType)
+        ) {
+          const honorsCount = prev[CourseCategory.HONORS]?.length || 0;
+          const minorCount = prev[CourseCategory.MINOR]?.length || 0;
+          if (honorsCount + minorCount >= 1) {
+            toast.error('You can select only one course between Honors and Minor');
+            return prev;
+          }
+        } else if (courseType === CourseCategory.MDM) {
+          if (currentPrefs.length >= 1) {
+            toast.error('Only one MDM choice allowed');
+            return prev;
+          }
+        }
+
+        currentPrefs.push(course);
+      } else {
+        // Removing selected course
+        currentPrefs.splice(index, 1);
+      }
+
+      return { ...prev, [courseType]: currentPrefs };
+    });
+  };
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
@@ -124,27 +172,27 @@ function Preferences() {
         <h2 className="text-2xl font-bold">Course Preferences</h2>
         <button
           onClick={handleSubmit}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500"
+          className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
         >
           Submit Preferences
         </button>
       </div>
 
       {Object.entries(COURSES).map(([type, courses]) => (
-        <div key={type} className="bg-white p-6 rounded-lg shadow-md space-y-4">
+        <div key={type} className="bg-white p-6 rounded-lg shadow-md">
           <h3 className="text-xl font-semibold flex justify-between">
-            {type.replace('_', ' ')}
+            {type}
             {type === CourseCategory.MDM && (
               <span className="text-red-500 text-sm">*Required</span>
             )}
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courses.map((course) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+            {courses.map(course => (
               <CourseCard
                 key={course.id}
                 course={course}
-                selected={preferences[type].some(p => p.id === course.id)}
-                preference={preferences[type].findIndex(p => p.id === course.id) + 1}
+                selected={preferences[type]?.some(p => p.id === course.id)}
+                preference={preferences[type]?.findIndex(p => p.id === course.id) + 1}
                 onSelect={() => handleSelect(type, course)}
               />
             ))}
@@ -152,7 +200,7 @@ function Preferences() {
         </div>
       ))}
     </div>
-  )
+  );
 }
 
-export default Preferences
+export default Preferences;
