@@ -1,17 +1,22 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 import pandas as pd
-import logging
 import os
-from io import BytesIO
+import logging
+from datetime import datetime
+import xlsxwriter
+from ..api.models import AllocationResponse
+from enum import Enum
 
-from app.api.models import AllocationResponse, DownloadFormat, CourseCategory
+class DownloadFormat(str, Enum):
+    EXCEL = "excel"
+    CSV = "csv"
 
 logger = logging.getLogger("course_allocation_service")
 
 def generate_allocation_report(
     allocation: AllocationResponse,
     output_path: str,
-    format: DownloadFormat = DownloadFormat.EXCEL
+    format: Union[str, DownloadFormat] = DownloadFormat.EXCEL
 ):
     """
     Generate an Excel or CSV report with student allocations and course summaries.
@@ -21,13 +26,36 @@ def generate_allocation_report(
         output_path: Path where to save the report
         format: Output format (excel or csv)
     """
-    logger.info(f"Generating {format.value} report at {output_path}")
+    # Convert string format to enum if needed
+    if isinstance(format, str):
+        format = DownloadFormat(format.lower())
     
-    # Create DataFrames for each sheet
-    student_df = create_student_allocation_dataframe(allocation)
-    course_df = create_course_summary_dataframe(allocation)
-    issues_df = create_issues_dataframe(allocation)
+    logger.info(f"Generating {format} report at {output_path}")
     
+    # Prepare data
+    student_data = []
+    for student_id, courses in allocation.student_allocations.items():
+        row = {'Student ID': student_id}
+        if isinstance(courses, dict):
+            for category, course in courses.items():
+                row[category] = course
+        student_data.append(row)
+
+    course_data = []
+    for course_id, students in allocation.course_enrollments.items():
+        student_list = students if isinstance(students, list) else []
+        course_data.append({
+            'Course ID': course_id,
+            'Enrolled Students': len(student_list),
+            'Student List': ', '.join(student_list) if student_list else 'No students'
+        })
+
+    # Create issues sheet
+    issues_data = [
+        {'Issue #': i+1, 'Description': issue}
+        for i, issue in enumerate(allocation.issues or ['No issues reported'])
+    ]
+
     # Ensure the directory exists
     directory = os.path.dirname(output_path)
     if directory and not os.path.exists(directory):
@@ -40,78 +68,71 @@ def generate_allocation_report(
     
     # Generate the requested format
     if format == DownloadFormat.EXCEL:
-        generate_excel_report(student_df, course_df, issues_df, output_path)
-    else:
-        generate_csv_report(student_df, course_df, issues_df, output_path)
-    
-    logger.info(f"Report generation completed: {output_path}")
+        # Create Excel writer
+        writer = pd.ExcelWriter(output_path, engine='xlsxwriter')
+        workbook = writer.book
 
-def create_student_allocation_dataframe(allocation: AllocationResponse) -> pd.DataFrame:
-    """Create a DataFrame for student allocations."""
-    records = []
-    
-    for student in allocation.student_allocations:
-        record = {
-            "Student ID": student.student_id,
-            "Name": student.name
-        }
-        
-        # Add allocations by category
-        for category in CourseCategory:
-            record[str(category)] = student.allocations.get(category, "Not Allocated")
-        
-        # Add issues
-        record["Issues"] = "; ".join(student.issues) if student.issues else "None"
-        
-        records.append(record)
-    
-    return pd.DataFrame(records)
-
-def create_course_summary_dataframe(allocation: AllocationResponse) -> pd.DataFrame:
-    """Create a DataFrame for course enrollment summaries."""
-    records = []
-    
-    for course_id, enrollment in allocation.course_summaries.items():
-        records.append({
-            "Course ID": course_id,
-            "Enrolled Students": enrollment.enrolled,
-            "Student IDs": ", ".join(enrollment.students)
+        # Add formats
+        header_format = workbook.add_format({
+            'bold': True,
+            'bg_color': '#D3D3D3',
+            'border': 1
         })
-    
-    return pd.DataFrame(records)
 
-def create_issues_dataframe(allocation: AllocationResponse) -> pd.DataFrame:
-    """Create a DataFrame for all issues."""
-    return pd.DataFrame({
-        "Issue": allocation.issues
-    })
+        empty_course_format = workbook.add_format({
+            'bg_color': '#FFC7CE',
+            'font_color': '#9C0006'
+        })
 
-def generate_excel_report(
-    student_df: pd.DataFrame,
-    course_df: pd.DataFrame,
-    issues_df: pd.DataFrame,
-    output_path: str
-):
-    """Generate an Excel report with multiple sheets."""
-    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        student_df.to_excel(writer, sheet_name='Student Allocations', index=False)
-        course_df.to_excel(writer, sheet_name='Course Summaries', index=False)
-        issues_df.to_excel(writer, sheet_name='Issues', index=False)
-
-def generate_csv_report(
-    student_df: pd.DataFrame,
-    course_df: pd.DataFrame,
-    issues_df: pd.DataFrame,
-    output_path: str
-):
-    """Generate a single CSV report."""
-    # For CSV, we'll combine all tables with headers
-    with open(output_path, 'w') as f:
-        f.write("STUDENT ALLOCATIONS\n")
-        student_df.to_csv(f, index=False)
+        # Write student allocations
+        df_students = pd.DataFrame(student_data)
+        df_students.to_excel(writer, sheet_name='Student Allocations', index=False)
+        worksheet = writer.sheets['Student Allocations']
         
-        f.write("\n\nCOURSE SUMMARIES\n")
-        course_df.to_csv(f, index=False)
+        # Format headers
+        for col_num, value in enumerate(df_students.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+            worksheet.set_column(col_num, col_num, 15)
+
+        # Write course enrollments
+        df_courses = pd.DataFrame(course_data)
+        df_courses.to_excel(writer, sheet_name='Course Enrollments', index=False)
+        worksheet = writer.sheets['Course Enrollments']
         
-        f.write("\n\nISSUES\n")
-        issues_df.to_csv(f, index=False)
+        # Format headers and highlight empty courses
+        for col_num, value in enumerate(df_courses.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+            worksheet.set_column(col_num, col_num, 20)
+
+        # Highlight empty courses
+        for row_num, (_, row) in enumerate(df_courses.iterrows(), start=1):
+            if row['Enrolled Students'] == 0:
+                worksheet.set_row(row_num, None, empty_course_format)
+
+        # Write issues
+        df_issues = pd.DataFrame(issues_data)
+        df_issues.to_excel(writer, sheet_name='Issues', index=False)
+        worksheet = writer.sheets['Issues']
+        
+        # Format headers
+        for col_num, value in enumerate(df_issues.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+            worksheet.set_column(col_num, col_num, 30)
+
+        writer.close()
+        
+    else:
+        # Generate CSV
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(f"Course Allocation Report - Generated: {datetime.now()}\n\n")
+            
+            f.write("=== STUDENT ALLOCATIONS ===\n")
+            pd.DataFrame(student_data).to_csv(f, index=False)
+            
+            f.write("\n=== COURSE ENROLLMENTS ===\n")
+            pd.DataFrame(course_data).to_csv(f, index=False)
+            
+            f.write("\n=== ISSUES ===\n")
+            pd.DataFrame(issues_data).to_csv(f, index=False)
+
+    logger.info(f"Report generation completed: {output_path}")

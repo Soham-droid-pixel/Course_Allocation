@@ -11,6 +11,7 @@ function AdminDashboard() {
   const [isAllocating, setIsAllocating] = useState(false)
   const [allocationId, setAllocationId] = useState(null)
   const [allocationStatus, setAllocationStatus] = useState(null)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   useEffect(() => {
     fetchStats()
@@ -52,10 +53,14 @@ function AdminDashboard() {
     }
 
     try {
-      await downloadReport(allocationId, format)
-      toast.success(`Report downloaded successfully in ${format} format`)
+      setIsDownloading(true);
+      await downloadReport(allocationId, format);
+      toast.success(`Report downloaded in ${format} format`)
     } catch (error) {
-      toast.error('Failed to download report')
+      console.error('Download error:', error);
+      toast.error(error.message || 'Failed to download report');
+    } finally {
+      setIsDownloading(false);
     }
   }
 
@@ -102,15 +107,17 @@ function AdminDashboard() {
           <div className="flex space-x-4">
             <button
               onClick={() => handleDownloadReport('excel')}
-              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+              disabled={isDownloading}
             >
-              Download Excel Report
+              {isDownloading ? 'Downloading...' : 'Download Excel Report'}
             </button>
             <button
               onClick={() => handleDownloadReport('csv')}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+              disabled={isDownloading}
             >
-              Download CSV Report
+              {isDownloading ? 'Downloading...' : 'Download CSV Report'}
             </button>
           </div>
         </div>

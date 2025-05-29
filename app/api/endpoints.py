@@ -6,6 +6,15 @@ import os
 import asyncio
 from datetime import datetime
 import logging
+import os
+
+async def cleanup_temp_file(file_path: str):
+    try:
+        await asyncio.sleep(300)  # Wait 5 minutes
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        logger.error(f"Error cleaning up temp file {file_path}: {e}")
 
 from .models import (
     StudentPreference, 
@@ -153,61 +162,54 @@ async def allocate(request: AllocationRequest):
 async def download_report(
     allocation_id: str,
     background_tasks: BackgroundTasks,
-    format: DownloadFormat = Query(DownloadFormat.EXCEL)
+    format: str = Query(..., regex="^(excel|csv)$")
 ):
     try:
-        logger.info(f"Generating report for allocation {allocation_id}")
-        allocation = await AllocationResult.find_one(
-            {"allocation_id": allocation_id}
-        )
+        # Convert format to lowercase to match enum values
+        format = format.lower()
+        logger.info(f"Generating {format} report for allocation {allocation_id}")
+        
+        allocation = await AllocationResult.find_one({"allocation_id": allocation_id})
         if not allocation:
-            raise HTTPException(status_code=404, detail="Allocation result not found")
+            raise HTTPException(status_code=404, detail=f"Allocation {allocation_id} not found")
 
-        file_extension = 'xlsx' if format == DownloadFormat.EXCEL else 'csv'
+        file_extension = 'xlsx' if format == 'excel' else 'csv'
         filename = f'course_allocation_{allocation_id}.{file_extension}'
         
-        # Use temp directory for file storage
         temp_dir = os.path.join(os.getcwd(), 'temp')
         os.makedirs(temp_dir, exist_ok=True)
         file_path = os.path.join(temp_dir, filename)
 
-        # Convert DB model to API model for report generation
-        api_allocation = AllocationResponse(
-            student_allocations=[
-                StudentPreference(student_id=sid, allocations=alloc)
-                for sid, alloc in allocation.student_allocations.items()
-            ],
-            course_summaries={
-                cid: {"students": students}
-                for cid, students in allocation.course_enrollments.items()
-            },
-            issues=allocation.issues
-        )
+        # Generate report with string format
+        generate_allocation_report(allocation, file_path, format)
 
-        generate_allocation_report(api_allocation, file_path, format)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=500, detail="Failed to generate report file")
 
-        async def cleanup_file(path: str, delay: int = 5):
-            await asyncio.sleep(delay)
+        # Schedule cleanup
+        async def cleanup_file():
+            await asyncio.sleep(300)  # 5 minutes
             try:
-                if os.path.exists(path):
-                    os.unlink(path)
-                    logger.info(f"Cleaned up temporary file: {path}")
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+                    logger.info(f"Cleaned up file: {file_path}")
             except Exception as e:
-                logger.error(f"Error cleaning up file {path}: {str(e)}")
+                logger.error(f"Error cleaning up file {file_path}: {str(e)}")
 
-        background_tasks.add_task(cleanup_file, file_path)
+        background_tasks.add_task(cleanup_file)
 
         return FileResponse(
             path=file_path,
             filename=filename,
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                if format == DownloadFormat.EXCEL else 'text/csv'
+                if format == 'excel' else 'text/csv'
         )
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error generating report: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stats", response_model=dict)
 async def get_stats():
@@ -226,3 +228,56 @@ async def get_stats():
     except Exception as e:
         logger.error(f"Error fetching stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/allocations/recent", response_model=dict)
+async def get_recent_allocation():
+    try:
+        # Get most recent allocation
+        recent = await AllocationResult.find(
+            {"status": "completed"}
+        ).sort([("created_at", -1)]).first()
+        
+        if not recent:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed allocations found"
+            )
+            
+        return {"allocation_id": recent.allocation_id}
+    except Exception as e:
+        logger.error(f"Error fetching recent allocation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/allocations/latest")
+async def get_latest_allocation():
+    try:
+        # Get total completed allocations
+        stats = await get_stats()
+        if stats["completedAllocations"] == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed allocations found"
+            )
+
+        # Get most recent completed allocation
+        latest = await AllocationResult.find_one(
+            {"status": "completed"},
+            sort=[("created_at", -1)]
+        )
+        
+        if not latest:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed allocation found"
+            )
+            
+        return {"allocation_id": latest.allocation_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting latest allocation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )

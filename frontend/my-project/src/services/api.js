@@ -54,24 +54,67 @@ export const triggerAllocation = async () => {
     throw error.response?.data?.detail || error.message;
   }
 }
-export const downloadReport = async (allocationId, format = 'excel') => {
+
+export const getLatestAllocationId = async () => {
   try {
-    const response = await api.get(`/download/${allocationId}?format=${format}`, {
-      responseType: 'blob' // Important for file downloads
-    })
+    const statsResponse = await api.get('/stats')
+    const { completedAllocations } = statsResponse.data
+
+    if (!completedAllocations || completedAllocations === 0) {
+      throw new Error('No completed allocations available')
+    }
+
+    // Get the latest completed allocation
+    const response = await api.get('/allocations/latest')
     
-    // Create and trigger download
-    const url = window.URL.createObjectURL(new Blob([response.data]))
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `allocation-report.${format === 'excel' ? 'xlsx' : 'csv'}`)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.URL.revokeObjectURL(url)
-    
-    return true
+    if (!response.data || !response.data.allocation_id) {
+      throw new Error('Invalid allocation response format')
+    }
+
+    return response.data.allocation_id
   } catch (error) {
-    throw error.response?.data?.detail || error.message
+    if (error.response?.status === 500) {
+      console.error('Server error:', error.response.data)
+      throw new Error('Server error while fetching allocation')
+    }
+    throw error
+  }
+}
+
+export const downloadReport = async (allocationId, format) => {
+  try {
+    const response = await api.get(`/download/${allocationId}`, {
+      params: { format },
+      responseType: 'blob'
+    })
+
+    // Check if response is an error message (non-blob)
+    if (response.data instanceof Blob) {
+      const contentType = format === 'excel' 
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'text/csv'
+
+      const blob = new Blob([response.data], { type: contentType })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `allocation-report-${allocationId}.${format === 'excel' ? 'xlsx' : 'csv'}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      return true
+    } else {
+      throw new Error('Invalid response format')
+    }
+  } catch (error) {
+    if (error.response?.status === 400) {
+      throw new Error('Allocation is incomplete - all courses must have students assigned')
+    }
+    if (error.response?.status === 500) {
+      console.error('Server error:', error.response.data)
+      throw new Error('Failed to generate report - server error')
+    }
+    throw error
   }
 }

@@ -1,23 +1,24 @@
 import { useState } from 'react'
+import { toast } from 'react-hot-toast'
 import { downloadReport } from '../../services/api'
 
 function Reports() {
   const [selectedFormat, setSelectedFormat] = useState('excel')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const handleDownload = async () => {
     setLoading(true)
+    setError(null)
     try {
-      const data = await downloadReport('latest', selectedFormat)
-      // Handle file download
-      const blob = new Blob([data], { type: 'application/octet-stream' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `allocation-report.${selectedFormat}`
-      a.click()
+      await downloadReport('872981a6-f7fc-4c9d-9479-c7d57135dfb2', selectedFormat)
+      toast.success('Report downloaded successfully')
     } catch (error) {
-      console.error('Download failed:', error)
+      const message = error.message.includes('incomplete') 
+        ? 'Cannot download report: Allocation is incomplete - all courses must have students'
+        : error.message
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -36,17 +37,22 @@ function Reports() {
           >
             <option value="excel">Excel</option>
             <option value="csv">CSV</option>
-            <option value="pdf">PDF</option>
           </select>
 
           <button
             onClick={handleDownload}
             disabled={loading}
-            className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-secondary disabled:opacity-50"
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? 'Downloading...' : 'Download Report'}
           </button>
         </div>
+
+        {error && (
+          <div className="mt-4 text-red-600 text-sm">
+            {error}
+          </div>
+        )}
       </div>
     </div>
   )
