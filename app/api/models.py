@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Optional, Any
 from enum import Enum
+from datetime import datetime
 
 class CourseCategory(str, Enum):
     PECL1 = "PECL1"
@@ -15,22 +16,43 @@ class CourseChoice(BaseModel):
     choice1: Optional[str] = None
     choice2: Optional[str] = None
 
-class StudentPreference(BaseModel):
-    student_id: str
-    name: str
-    preferences: Dict[CourseCategory, CourseChoice] = {}
+    def to_dict(self) -> dict:
+        """Convert CourseChoice to dictionary"""
+        return {
+            "choice1": self.choice1,
+            "choice2": self.choice2
+        }
+
+class PreferenceBase(BaseModel):
+    student_id: str = Field(..., description="Unique identifier for the student")
+    name: str = Field(default="Unknown", description="Student's full name")
+    preferences: Dict[CourseCategory, CourseChoice] = Field(
+        default_factory=dict,
+        description="Student's course preferences by category"
+    )
     
     @validator('preferences')
     def validate_mdm_mandatory(cls, v):
-        # Ensure MDM is present as it's mandatory
         if CourseCategory.MDM not in v:
             raise ValueError("MDM course selection is mandatory")
         
-        # Check that at least choice1 is provided for MDM
-        if not v[CourseCategory.MDM].choice1:
+        mdm_choice = v.get(CourseCategory.MDM)
+        if not mdm_choice or not mdm_choice.choice1:
             raise ValueError("At least choice1 for MDM is mandatory")
             
         return v
+
+class StudentPreference(PreferenceBase):
+    def to_db_model(self) -> dict:
+        """Convert to database model format"""
+        return {
+            "student_id": self.student_id,
+            "name": self.name,
+            "preferences": {
+                category: choices.to_dict()
+                for category, choices in self.preferences.items()
+            }
+        }
 
 class AllocationRequest(BaseModel):
     students: List[StudentPreference]
@@ -56,9 +78,18 @@ class StudentAllocation(BaseModel):
 
 class CourseEnrollment(BaseModel):
     course_id: str
-    capacity: int = 0
-    enrolled: int = 0
-    students: List[str] = []
+    name: str = Field(default="Unknown Course")
+    capacity: int = Field(default=60, ge=0)
+    min_enrollment: int = Field(default=20, ge=0)
+    enrolled: int = Field(default=0, ge=0)
+    students: List[str] = Field(default_factory=list)
+    waitlist: List[str] = Field(default_factory=list)
+
+    @validator('enrolled')
+    def validate_enrollment(cls, v, values):
+        if 'capacity' in values and v > values['capacity']:
+            raise ValueError("Enrolled students cannot exceed capacity")
+        return v
 
 class AllocationResponse(BaseModel):
     student_allocations: List[StudentAllocation]
@@ -68,3 +99,12 @@ class AllocationResponse(BaseModel):
 class DownloadFormat(str, Enum):
     EXCEL = "excel"
     CSV = "csv"
+
+class PreferenceResponse(BaseModel):
+    student_id: str
+    name: str = Field(default="Unknown")
+    preferences: Dict[str, CourseChoice] = Field(default_factory=dict)
+
+    class Config:
+        from_attributes = True
+        arbitrary_types_allowed = True

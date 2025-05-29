@@ -7,11 +7,20 @@ import asyncio
 from datetime import datetime
 import logging
 
-from .models import StudentPreference, AllocationRequest, AllocationResponse, DownloadFormat, CourseCategory
+from .models import (
+    StudentPreference, 
+    AllocationRequest, 
+    AllocationResponse, 
+    DownloadFormat, 
+    CourseCategory,
+    PreferenceResponse,
+    CourseChoice
+)
 from ..db.models import StudentPreference as StudentPreferenceDB, AllocationResult
 from ..core.exceptions import CourseAllocationException
 from ..services.allocation import allocate_courses
 from ..services.report import generate_allocation_report
+from ..utils.validation import validate_mdm_selection
 
 
 logger = logging.getLogger("course_allocation_service")
@@ -20,10 +29,19 @@ router = APIRouter()
 @router.post("/preferences/submit", status_code=201)
 async def submit_preferences(preference: StudentPreference):
     try:
+        # Convert CourseChoice objects to dictionaries
+        converted_preferences = {
+            category: {
+                "choice1": choices.choice1,
+                "choice2": choices.choice2
+            }
+            for category, choices in preference.preferences.items()
+        }
+
         db_preference = StudentPreferenceDB(
             student_id=preference.student_id,
             name=preference.name,
-            preferences=preference.preferences,
+            preferences=converted_preferences,
             created_at=datetime.utcnow()
         )
         await db_preference.insert()
@@ -33,12 +51,38 @@ async def submit_preferences(preference: StudentPreference):
         logger.error(f"Error submitting preferences: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/preferences", response_model=List[StudentPreference])
+@router.get("/preferences", response_model=List[PreferenceResponse])
 async def get_all_preferences():
     try:
-        preferences = await StudentPreferenceDB.find_all().to_list()
-        logger.info(f"Retrieved {len(preferences)} student preferences")
-        return preferences
+        db_preferences = await StudentPreferenceDB.find_all().to_list()
+        logger.info(f"Retrieved {len(db_preferences)} student preferences")
+        
+        # Convert DB preferences to response format
+        response_preferences = []
+        for pref in db_preferences:
+            try:
+                # Convert raw preferences to CourseChoice objects
+                converted_preferences = {}
+                for category, choices in pref.preferences.items():
+                    if isinstance(choices, dict):
+                        converted_preferences[category] = CourseChoice(
+                            choice1=choices.get('choice1'),
+                            choice2=choices.get('choice2')
+                        )
+                
+                # Create response object
+                response_pref = PreferenceResponse(
+                    student_id=pref.student_id,
+                    name=pref.name if hasattr(pref, 'name') else "Unknown",
+                    preferences=converted_preferences
+                )
+                response_preferences.append(response_pref)
+            except Exception as e:
+                logger.error(f"Error converting preference for student: {str(e)}")
+                continue
+
+        return response_preferences
+
     except Exception as e:
         logger.error(f"Error retrieving preferences: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -47,24 +91,34 @@ async def get_all_preferences():
 async def allocate(request: AllocationRequest):
     try:
         logger.info("Starting course allocation process")
-        preferences = await StudentPreferenceDB.find_all().to_list()
+        db_preferences = await StudentPreferenceDB.find_all().to_list()
         
-        if not preferences:
+        if not db_preferences:
             raise CourseAllocationException("No preferences found for allocation")
 
-        # Validate MDM selections
-        invalid_preferences = [
-            p.student_id for p in preferences 
-            if not p.preferences.get(CourseCategory.MDM.value, {}).get('choice1')
-        ]
-        
-        if invalid_preferences:
-            raise CourseAllocationException(
-                f"Missing MDM selection for students: {', '.join(invalid_preferences)}"
-            )
+        # Convert DB preferences to API model format
+        preferences = []
+        for db_pref in db_preferences:
+            try:
+                converted = StudentPreference(
+                    student_id=db_pref.student_id,
+                    name=db_pref.name,
+                    preferences=db_pref.convert_preferences()
+                )
+                preferences.append(converted)
+            except Exception as e:
+                logger.error(f"Error converting preferences for {db_pref.student_id}: {str(e)}")
+                continue
 
+        # Continue with allocation if we have valid preferences
+        if not preferences:
+            raise CourseAllocationException("No valid preferences found after conversion")
+
+        # Validate and allocate
+        validate_mdm_selection(preferences)
         allocation_result = allocate_courses(preferences)
         
+        # Save allocation result
         allocation_id = str(uuid.uuid4())
         db_allocation = AllocationResult(
             allocation_id=allocation_id,
@@ -87,6 +141,7 @@ async def allocate(request: AllocationRequest):
             "allocation_id": allocation_id,
             **allocation_result.dict()
         }
+
     except CourseAllocationException as e:
         logger.error(f"Allocation error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -153,3 +208,21 @@ async def download_report(
     except Exception as e:
         logger.error(f"Error generating report: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+
+@router.get("/stats", response_model=dict)
+async def get_stats():
+    try:
+        # Get all preferences
+        total_submissions = await StudentPreferenceDB.find_all().count()
+        
+        # Get completed allocations
+        completed = await AllocationResult.find({"status": "completed"}).count()
+
+        return {
+            "totalSubmissions": total_submissions,
+            "pendingAllocations": total_submissions - completed,
+            "completedAllocations": completed
+        }
+    except Exception as e:
+        logger.error(f"Error fetching stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

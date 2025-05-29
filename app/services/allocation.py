@@ -88,9 +88,18 @@ def process_category_allocation(
     choice2_requests: Dict[str, List[str]],
     issues: List[str]
 ):
-    """
-    Process allocations for a specific course category.
-    """
+    """Process allocations for a specific course category."""
+    
+    # Special handling for MDM category
+    if category == CourseCategory.MDM:
+        process_mdm_allocation(
+            students=students,
+            student_allocations=student_allocations,
+            course_enrollments=course_enrollments,
+            issues=issues
+        )
+        return
+
     # First pass: Try to allocate first choices
     allocated_students = set()
     
@@ -161,6 +170,55 @@ def process_category_allocation(
     
     # Optional categories don't need special handling if not allocated
 
+def process_mdm_allocation(
+    students: List[StudentPreference],
+    student_allocations: Dict[str, StudentAllocation],
+    course_enrollments: Dict[str, CourseEnrollment],
+    issues: List[str]
+):
+    """
+    Special allocation logic for MDM courses where only one choice is allowed.
+    """
+    mdm_requests = defaultdict(list)
+    
+    # Collect MDM choices
+    for student in students:
+        mdm_prefs = (
+            student.preferences.get("MDM") or 
+            student.preferences.get(CourseCategory.MDM.value)
+        )
+        if mdm_prefs and isinstance(mdm_prefs, dict):
+            mdm_choice = mdm_prefs.get('choice1')
+            if mdm_choice:
+                mdm_requests[mdm_choice].append(student.student_id)
+    
+    # Validate and allocate MDM courses
+    valid_mdm_courses = {
+        "Health Wellness Psychology": "MDM1",
+        "Emotional and Spiritual Intelligence": "MDM2"
+    }
+    
+    for course_name, student_ids in mdm_requests.items():
+        course_id = valid_mdm_courses.get(course_name)
+        if not course_id:
+            issues.append(f"Invalid MDM course: {course_name}")
+            continue
+            
+        for student_id in student_ids:
+            allocate_student_to_course(
+                student_id=student_id,
+                course_id=course_id,
+                category=CourseCategory.MDM,
+                student_allocations=student_allocations,
+                course_enrollments=course_enrollments
+            )
+            
+        # Add course statistics to issues if needed
+        if len(student_ids) < settings.MIN_COURSE_ENROLLMENT:
+            issues.append(
+                f"MDM course {course_id} has low enrollment: {len(student_ids)}/{settings.MIN_COURSE_ENROLLMENT}"
+            )
+
 def allocate_student_to_course(
     student_id: str,
     course_id: str,
@@ -180,3 +238,15 @@ def allocate_student_to_course(
     course.students.append(student_id)
     
     logger.debug(f"Allocated student {student_id} to course {course_id} in category {category}")
+
+def validate_mdm_selection(preferences):
+    invalid_students = []
+    for student in preferences:
+        mdm_prefs = student.preferences.get(CourseCategory.MDM)
+        if not mdm_prefs or not mdm_prefs.choice1:
+            invalid_students.append(student.student_id)
+    
+    if invalid_students:
+        raise CourseAllocationException(
+            f"Missing MDM first choice for students: {', '.join(invalid_students)}"
+        )
