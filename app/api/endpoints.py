@@ -165,13 +165,27 @@ async def download_report(
     format: str = Query(..., regex="^(excel|csv)$")
 ):
     try:
-        # Convert format to lowercase to match enum values
         format = format.lower()
         logger.info(f"Generating {format} report for allocation {allocation_id}")
         
+        # Try to find the requested allocation
         allocation = await AllocationResult.find_one({"allocation_id": allocation_id})
+        
+        # If not found, try to get the latest allocation
         if not allocation:
-            raise HTTPException(status_code=404, detail=f"Allocation {allocation_id} not found")
+            logger.info(f"Allocation {allocation_id} not found, attempting to get latest allocation")
+            latest = await AllocationResult.find_one(
+                {"status": "completed"},
+                sort=[("created_at", -1)]
+            )
+            if not latest:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No completed allocations found"
+                )
+            allocation = latest
+            allocation_id = latest.allocation_id
+            logger.info(f"Using latest allocation: {allocation_id}")
 
         file_extension = 'xlsx' if format == 'excel' else 'csv'
         filename = f'course_allocation_{allocation_id}.{file_extension}'
@@ -180,23 +194,14 @@ async def download_report(
         os.makedirs(temp_dir, exist_ok=True)
         file_path = os.path.join(temp_dir, filename)
 
-        # Generate report with string format
+        # Generate report
         generate_allocation_report(allocation, file_path, format)
 
         if not os.path.exists(file_path):
             raise HTTPException(status_code=500, detail="Failed to generate report file")
 
         # Schedule cleanup
-        async def cleanup_file():
-            await asyncio.sleep(300)  # 5 minutes
-            try:
-                if os.path.exists(file_path):
-                    os.unlink(file_path)
-                    logger.info(f"Cleaned up file: {file_path}")
-            except Exception as e:
-                logger.error(f"Error cleaning up file {file_path}: {str(e)}")
-
-        background_tasks.add_task(cleanup_file)
+        background_tasks.add_task(cleanup_temp_file, file_path)
 
         return FileResponse(
             path=file_path,
