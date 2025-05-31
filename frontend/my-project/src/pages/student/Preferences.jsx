@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import CourseCard from '../../components/student/CourseCard';
 import { submitPreferences } from '../../services/api';
@@ -64,7 +65,13 @@ const COURSES = {
 }
 
 function Preferences() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const existingPreferences = location.state?.existingPreferences;
+
+  // Initialize state with existing preferences if available
   const [preferences, setPreferences] = useState(
+    existingPreferences?.preferences || 
     Object.values(CourseCategory).reduce((acc, cat) => ({
       ...acc,
       [cat]: []
@@ -118,10 +125,42 @@ function Preferences() {
         return;
       }
 
-      await submitPreferences(preferences);
+      // Format preferences to match API expectations
+      const formattedPreferences = {
+        student_id: localStorage.getItem('userId') || 'TEST001',
+        name: localStorage.getItem('userName') || 'Test Student',
+        preferences: Object.entries(preferences).reduce((acc, [category, courses]) => {
+          // Convert array of courses to CourseChoice format
+          return {
+            ...acc,
+            [category]: {
+              choice1: courses[0]?.id || "",  // Use empty string instead of null
+              choice2: courses[1]?.id || ""   // Use empty string instead of null
+            }
+          };
+        }, {}),
+        status: "draft"  // Initial status
+      };
+
+      // Ensure MDM is present
+      if (!formattedPreferences.preferences[CourseCategory.MDM]?.choice1) {
+        toast.error('MDM first choice is mandatory');
+        return;
+      }
+
+      await submitPreferences(formattedPreferences);
       toast.success('Preferences submitted successfully!');
+      
+      navigate('/student/preferences/confirm', {
+        state: {
+          preferences: formattedPreferences,
+          studentId: formattedPreferences.student_id,
+          coursesData: COURSES  // Pass course details for display
+        }
+      });
     } catch (error) {
-      toast.error(error.message);
+      console.error('Submission error:', error);
+      toast.error(error.message || 'Failed to submit preferences');
     }
   };
 
@@ -170,12 +209,23 @@ function Preferences() {
     <div className="max-w-7xl mx-auto p-6 space-y-8">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Course Preferences</h2>
-        <button
-          onClick={handleSubmit}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          Submit Preferences
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={() => setPreferences(Object.values(CourseCategory).reduce((acc, cat) => ({
+              ...acc,
+              [cat]: []
+            }), {}))}
+            className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700"
+          >
+            Reset
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
+          >
+            Review & Submit
+          </button>
+        </div>
       </div>
 
       {Object.entries(COURSES).map(([type, courses]) => (

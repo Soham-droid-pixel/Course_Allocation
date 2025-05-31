@@ -1,252 +1,202 @@
+from typing import List, Dict, Optional
 from collections import defaultdict
-from typing import List, Dict, Set, Tuple
+from datetime import datetime
 import logging
+import json
 
-from app.api.models import (
-    StudentPreference, StudentAllocation, CourseEnrollment, 
-    AllocationResponse, CourseCategory
+from ..api.models import (
+    StudentPreference, AllocationResponse, StudentAllocation, 
+    CourseEnrollment, PreferenceStatus, CourseCategory
 )
-from app.core.config import settings
-from app.core.exceptions import CourseAllocationException
+from ..core.exceptions import CourseAllocationException
 
+# Configure logger
 logger = logging.getLogger("course_allocation_service")
 
-def allocate_courses(students: List[StudentPreference]) -> AllocationResponse:
-    """
-    Main course allocation logic.
-    
-    Allocates courses to students based on preferences with priority rules:
-    1. First choice is prioritized over second choice
-    2. Minimum enrollment criteria must be met
-    3. MDM is mandatory
-    4. Honors and minors are optional
-    
-    Returns complete allocation results with student and course summaries.
-    """
-    # Validate input
-    if not students:
-        raise CourseAllocationException("No students provided for allocation")
-    
-    logger.info(f"Starting course allocation for {len(students)} students")
-    
-    # Initialize tracking structures
-    choice1_requests = defaultdict(list)  # course_id -> [student_ids]
-    choice2_requests = defaultdict(list)  # course_id -> [student_ids]
-    student_allocations = {}  # student_id -> StudentAllocation object
-    course_enrollments = {}   # course_id -> CourseEnrollment object
-    issues = []
-    
-    # Step 1: Create allocation objects for each student
-    for student in students:
-        student_allocations[student.student_id] = StudentAllocation(
-            student_id=student.student_id,
-            name=student.name,
-            allocations={},
-            issues=[]
-        )
-    
-    # Step 2: Collect all course choices
-    for student in students:
-        for category, choices in student.preferences.items():
-            if choices.choice1:
-                choice1_requests[choices.choice1].append(student.student_id)
-            if choices.choice2:
-                choice2_requests[choices.choice2].append(student.student_id)
-    
-    # Initialize course enrollment objects
-    all_courses = set(list(choice1_requests.keys()) + list(choice2_requests.keys()))
-    for course_id in all_courses:
-        course_enrollments[course_id] = CourseEnrollment(course_id=course_id)
-    
-    # Step 3: Process allocations category by category
-    for category in CourseCategory:
-        logger.info(f"Processing allocations for category: {category}")
-        
-        process_category_allocation(
-            category=category,
-            students=students,
-            student_allocations=student_allocations,
-            course_enrollments=course_enrollments,
-            choice1_requests=choice1_requests,
-            choice2_requests=choice2_requests,
-            issues=issues
-        )
-    
-    # Step 4: Convert to response model
-    return AllocationResponse(
-        student_allocations=list(student_allocations.values()),
-        course_summaries=course_enrollments,
-        issues=issues
-    )
+# Course capacity constants
+COURSE_CAPACITY = 60
+MIN_ENROLLMENT = 20
 
-def process_category_allocation(
-    category: CourseCategory,
-    students: List[StudentPreference],
-    student_allocations: Dict[str, StudentAllocation],
-    course_enrollments: Dict[str, CourseEnrollment],
-    choice1_requests: Dict[str, List[str]],
-    choice2_requests: Dict[str, List[str]],
-    issues: List[str]
-):
-    """Process allocations for a specific course category."""
+def validate_mdm_selections(preferences: List[StudentPreference]) -> List[str]:
+    """Validates MDM course selections"""
+    invalid_students = []
+    valid_mdm_courses = ["MDM1", "MDM2"]  # Valid MDM courses
     
-    # Special handling for MDM category
-    if category == CourseCategory.MDM:
-        process_mdm_allocation(
-            students=students,
-            student_allocations=student_allocations,
-            course_enrollments=course_enrollments,
-            issues=issues
-        )
-        return
-
-    # First pass: Try to allocate first choices
-    allocated_students = set()
+    logger.info(f"Starting MDM validation for {len(preferences)} students")
     
-    # Collect all first choices for this category
-    category_choice1 = defaultdict(list)
-    category_choice2 = defaultdict(list)
-    
-    for student in students:
-        if category in student.preferences:
-            choices = student.preferences[category]
-            if choices.choice1:
-                category_choice1[choices.choice1].append(student.student_id)
-            if choices.choice2:
-                category_choice2[choices.choice2].append(student.student_id)
-    
-    # Determine which courses meet minimum enrollment with first choices
-    viable_courses = {
-        course_id: student_ids
-        for course_id, student_ids in category_choice1.items()
-        if len(student_ids) >= settings.MIN_COURSE_ENROLLMENT
-    }
-    
-    # Allocate first choices for viable courses
-    for course_id, student_ids in viable_courses.items():
-        for student_id in student_ids:
-            allocate_student_to_course(
-                student_id=student_id,
-                course_id=course_id,
-                category=category,
-                student_allocations=student_allocations,
-                course_enrollments=course_enrollments
-            )
-            allocated_students.add(student_id)
-    
-    # Second pass: Try to allocate second choices for unallocated students
-    for student in students:
-        if (
-            category in student.preferences and
-            student.student_id not in allocated_students and
-            student.preferences[category].choice2
-        ):
-            second_choice = student.preferences[category].choice2
-            second_choice_count = len(category_choice2[second_choice])
-            
-            # If second choice meets minimum enrollment, allocate it
-            if second_choice_count >= settings.MIN_COURSE_ENROLLMENT:
-                allocate_student_to_course(
-                    student_id=student.student_id,
-                    course_id=second_choice,
-                    category=category,
-                    student_allocations=student_allocations,
-                    course_enrollments=course_enrollments
-                )
-                allocated_students.add(student.student_id)
-            else:
-                # Record issue for courses not meeting minimum enrollment
-                issue = f"Course {second_choice} in category {category} has insufficient enrollment ({second_choice_count}/{settings.MIN_COURSE_ENROLLMENT})"
-                if issue not in issues:
-                    issues.append(issue)
-    
-    # Third pass: Handle unallocated mandatory courses
-    if category == CourseCategory.MDM:
-        for student in students:
-            if student.student_id not in allocated_students:
-                student_alloc = student_allocations[student.student_id]
-                student_alloc.issues.append(f"No MDM course allocated - choices didn't meet minimum enrollment")
-                issues.append(f"Student {student.student_id} ({student.name}) has no MDM allocation")
-    
-    # Optional categories don't need special handling if not allocated
-
-def process_mdm_allocation(
-    students: List[StudentPreference],
-    student_allocations: Dict[str, StudentAllocation],
-    course_enrollments: Dict[str, CourseEnrollment],
-    issues: List[str]
-):
-    """
-    Special allocation logic for MDM courses where only one choice is allowed.
-    """
-    mdm_requests = defaultdict(list)
-    
-    # Collect MDM choices
-    for student in students:
-        mdm_prefs = (
-            student.preferences.get("MDM") or 
-            student.preferences.get(CourseCategory.MDM.value)
-        )
-        if mdm_prefs and isinstance(mdm_prefs, dict):
-            mdm_choice = mdm_prefs.get('choice1')
-            if mdm_choice:
-                mdm_requests[mdm_choice].append(student.student_id)
-    
-    # Validate and allocate MDM courses
-    valid_mdm_courses = {
-        "Health Wellness Psychology": "MDM1",
-        "Emotional and Spiritual Intelligence": "MDM2"
-    }
-    
-    for course_name, student_ids in mdm_requests.items():
-        course_id = valid_mdm_courses.get(course_name)
-        if not course_id:
-            issues.append(f"Invalid MDM course: {course_name}")
+    for student in preferences:
+        if student.status != PreferenceStatus.CONFIRMED:
             continue
             
-        for student_id in student_ids:
-            allocate_student_to_course(
-                student_id=student_id,
-                course_id=course_id,
-                category=CourseCategory.MDM,
-                student_allocations=student_allocations,
-                course_enrollments=course_enrollments
+        logger.info(f"Validating MDM for student {student.student_id}")
+        
+        # Get MDM preferences
+        mdm_prefs = student.preferences.get("MDM", {})
+        if not isinstance(mdm_prefs, dict):
+            logger.warning(f"Invalid MDM preference format for student {student.student_id}")
+            invalid_students.append(student.student_id)
+            continue
+
+        # Extract and validate choice1
+        mdm_choice1 = str(mdm_prefs.get("choice1", "")).strip()
+        logger.info(f"Student {student.student_id} MDM choice1: {mdm_choice1}")
+
+        if not mdm_choice1 or mdm_choice1 not in valid_mdm_courses:
+            logger.warning(
+                f"Student {student.student_id}: Invalid MDM choice "
+                f"'{mdm_choice1}', valid options are: {valid_mdm_courses}"
+            )
+            invalid_students.append(student.student_id)
+            continue
+            
+        logger.info(f"Student {student.student_id}: Valid MDM choice found")
+
+    if invalid_students:
+        logger.warning(f"Found {len(invalid_students)} invalid MDM selections")
+        raise CourseAllocationException(
+            f"Invalid MDM selections for students: {', '.join(invalid_students)} "
+            "(invalid or missing selection)"
+        )
+    
+    logger.info("All MDM selections are valid")
+    return invalid_students
+
+def allocate_courses(preferences: List[StudentPreference]) -> AllocationResponse:
+    """Allocate courses based on student preferences"""
+    try:
+        logger.info("Starting allocation process")
+        
+        # Convert preferences to proper format if needed
+        validated_preferences = []
+        for pref in preferences:
+            if isinstance(pref, dict):
+                pref = StudentPreference(**pref)
+            validated_preferences.append(pref)
+        
+        # Validate MDM selections first
+        invalid_students = validate_mdm_selections(validated_preferences)
+        if invalid_students:
+            raise ValueError(
+                f"Invalid MDM selections for students: {', '.join(invalid_students)} "
+                "(invalid or missing selection)"
+            )
+
+        # Only proceed with confirmed preferences that have valid MDM choices
+        valid_preferences = []
+        for pref in preferences:
+            # Fix: Compare with string value instead of enum
+            if pref.status == PreferenceStatus.CONFIRMED:
+                mdm_prefs = pref.preferences.get("MDM", {})
+                if isinstance(mdm_prefs, dict):
+                    mdm_choice1 = mdm_prefs.get("choice1", "")
+                    if mdm_choice1 and str(mdm_choice1).strip():
+                        valid_preferences.append(pref)
+
+        if not valid_preferences:
+            return AllocationResponse(
+                student_allocations=[],
+                course_summaries={},
+                issues=["No valid confirmed preferences found"]
+            )
+
+        # Initialize tracking structures
+        course_enrollments: Dict[str, CourseEnrollment] = {}
+        student_allocations: List[StudentAllocation] = []
+        issues: List[str] = []
+
+        # First pass: Try to allocate first choices
+        for student in valid_preferences:
+            allocation = StudentAllocation(
+                student_id=student.student_id,
+                name=student.name,
+                allocations={},
+                issues=[]
+            )
+
+            for category, choices in student.preferences.items():
+                if not choices or not isinstance(choices, dict):
+                    continue
+
+                choice1 = choices.get("choice1", "")
+                if not choice1 or not str(choice1).strip():
+                    continue
+
+                course_id = str(choice1).strip()
+                if course_id not in course_enrollments:
+                    course_enrollments[course_id] = CourseEnrollment(
+                        course_id=course_id,
+                        capacity=COURSE_CAPACITY,
+                        min_enrollment=MIN_ENROLLMENT,
+                        enrolled=0,
+                        students=[],
+                        waitlist=[]
+                    )
+
+                course = course_enrollments[course_id]
+                if course.enrolled < course.capacity:
+                    course.students.append(student.student_id)
+                    course.enrolled += 1
+                    allocation.allocations[category] = course_id
+                else:
+                    course.waitlist.append(student.student_id)
+                    allocation.issues.append(f"Waitlisted for {course_id} in {category}")
+
+            student_allocations.append(allocation)
+
+        # Second pass: Try to allocate second choices for unallocated students
+        for student in student_allocations:
+            student_pref = next(
+                p for p in valid_preferences 
+                if p.student_id == student.student_id
             )
             
-        # Add course statistics to issues if needed
-        if len(student_ids) < settings.MIN_COURSE_ENROLLMENT:
-            issues.append(
-                f"MDM course {course_id} has low enrollment: {len(student_ids)}/{settings.MIN_COURSE_ENROLLMENT}"
-            )
+            unallocated_categories = set(student_pref.preferences.keys()) - set(student.allocations.keys())
+            
+            for category in unallocated_categories:
+                category_prefs = student_pref.preferences.get(category, {})
+                if not isinstance(category_prefs, dict):
+                    continue
+                    
+                choice2 = category_prefs.get("choice2", "")
+                if not choice2 or not str(choice2).strip():
+                    continue
 
-def allocate_student_to_course(
-    student_id: str,
-    course_id: str,
-    category: CourseCategory,
-    student_allocations: Dict[str, StudentAllocation],
-    course_enrollments: Dict[str, CourseEnrollment]
-):
-    """
-    Allocate a specific student to a course and update tracking structures.
-    """
-    # Update student allocation
-    student_allocations[student_id].allocations[category] = course_id
-    
-    # Update course enrollment
-    course = course_enrollments[course_id]
-    course.enrolled += 1
-    course.students.append(student_id)
-    
-    logger.debug(f"Allocated student {student_id} to course {course_id} in category {category}")
+                course_id = str(choice2).strip()
+                if course_id not in course_enrollments:
+                    course_enrollments[course_id] = CourseEnrollment(
+                        course_id=course_id,
+                        capacity=COURSE_CAPACITY,
+                        min_enrollment=MIN_ENROLLMENT,
+                        enrolled=0,
+                        students=[],
+                        waitlist=[]
+                    )
 
-def validate_mdm_selection(preferences):
-    invalid_students = []
-    for student in preferences:
-        mdm_prefs = student.preferences.get(CourseCategory.MDM)
-        if not mdm_prefs or not mdm_prefs.choice1:
-            invalid_students.append(student.student_id)
-    
-    if invalid_students:
-        raise CourseAllocationException(
-            f"Missing MDM first choice for students: {', '.join(invalid_students)}"
+                course = course_enrollments[course_id]
+                if course.enrolled < course.capacity:
+                    course.students.append(student.student_id)
+                    course.enrolled += 1
+                    student.allocations[category] = course_id
+                else:
+                    course.waitlist.append(student.student_id)
+                    student.issues.append(
+                        f"Waitlisted for second choice {course_id} in {category}"
+                    )
+
+        # Check minimum enrollments
+        for course_id, course in course_enrollments.items():
+            if course.enrolled < course.min_enrollment:
+                issues.append(
+                    f"Course {course_id} has insufficient enrollment: {course.enrolled}"
+                )
+
+        logger.info(f"Allocation completed for {len(student_allocations)} students")
+        return AllocationResponse(
+            student_allocations=student_allocations,
+            course_summaries=course_enrollments,
+            issues=issues
         )
+
+    except Exception as e:
+        logger.error(f"Error during allocation: {str(e)}")
+        raise CourseAllocationException(f"Error durring allocation: {str(e)}")

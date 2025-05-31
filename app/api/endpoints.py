@@ -1,12 +1,11 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status
 from fastapi.responses import FileResponse, JSONResponse
-from typing import List, Optional
+from typing import List, Dict, Any
 import uuid
 import os
 import asyncio
 from datetime import datetime
 import logging
-import os
 
 async def cleanup_temp_file(file_path: str):
     try:
@@ -23,12 +22,13 @@ from .models import (
     DownloadFormat, 
     CourseCategory,
     PreferenceResponse,
-    CourseChoice
+    CourseChoice,
+    PreferenceConfirmation
 )
 from ..db.models import StudentPreference as StudentPreferenceDB, AllocationResult
 from ..core.exceptions import CourseAllocationException
 from ..services.allocation import allocate_courses
-from ..services.report import generate_allocation_report
+from ..services.report import generate_allocation_report, DownloadFormat
 from ..utils.validation import validate_mdm_selection
 
 
@@ -36,29 +36,83 @@ logger = logging.getLogger("course_allocation_service")
 router = APIRouter()
 
 @router.post("/preferences/submit", status_code=201)
-async def submit_preferences(preference: StudentPreference):
+async def submit_preferences(request_data: Dict[str, Any]):
     try:
-        # Convert CourseChoice objects to dictionaries
-        converted_preferences = {
-            category: {
-                "choice1": choices.choice1,
-                "choice2": choices.choice2
-            }
-            for category, choices in preference.preferences.items()
+        logger.info(f"Received preference submission: {request_data}")
+        
+        # Extract and validate required fields
+        student_id = request_data.get("student_id")
+        if not student_id:
+            raise HTTPException(status_code=400, detail="student_id is required")
+        
+        # Process preferences and convert to expected format
+        processed_preferences = {}
+        raw_preferences = request_data.get("preferences", {})
+        
+        for category in CourseCategory:
+            category_key = category.value
+            category_data = raw_preferences.get(category_key, {})
+            
+            if isinstance(category_data, dict):
+                processed_preferences[category_key] = {
+                    "choice1": str(category_data.get("choice1") or "").strip(),
+                    "choice2": str(category_data.get("choice2") or "").strip()
+                }
+            else:
+                processed_preferences[category_key] = {
+                    "choice1": "",
+                    "choice2": ""
+                }
+
+        # Prepare validated data
+        preference_data = {
+            "student_id": student_id,
+            "name": request_data.get("name", "Unknown"),
+            "preferences": processed_preferences,
+            "status": request_data.get("status", "draft"),
+            "comments": request_data.get("comments", ""),
+            "updated_at": datetime.utcnow()
         }
 
-        db_preference = StudentPreferenceDB(
-            student_id=preference.student_id,
-            name=preference.name,
-            preferences=converted_preferences,
-            created_at=datetime.utcnow()
-        )
-        await db_preference.insert()
-        logger.info(f"Preferences submitted for student {preference.student_id}")
-        return {"message": "Preferences submitted successfully"}
-    except Exception as e:
-        logger.error(f"Error submitting preferences: {str(e)}")
+        # Validate using Pydantic model
+        validated_preference = StudentPreference(**preference_data)
+
+        # Save to database
+        existing = await StudentPreferenceDB.find_one({"student_id": student_id})
+        
+        if existing:
+            existing.name = validated_preference.name
+            existing.preferences = validated_preference.preferences
+            existing.status = validated_preference.status
+            existing.comments = validated_preference.comments
+            existing.updated_at = datetime.utcnow()
+            await existing.save()
+            logger.info(f"Updated preferences for student {student_id}")
+        else:
+            db_preference = StudentPreferenceDB(
+                student_id=validated_preference.student_id,
+                name=validated_preference.name,
+                preferences=validated_preference.preferences,
+                status=validated_preference.status,
+                comments=validated_preference.comments,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            await db_preference.save()
+            logger.info(f"Created new preferences for student {student_id}")
+
+        return {
+            "message": "Preferences submitted successfully",
+            "student_id": student_id,
+            "status": validated_preference.status
+        }
+
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error submitting preferences: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/preferences", response_model=List[PreferenceResponse])
 async def get_all_preferences():
@@ -158,63 +212,78 @@ async def allocate(request: AllocationRequest):
         logger.error(f"Unexpected error during allocation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/download/{allocation_id}")
-async def download_report(
-    allocation_id: str,
-    background_tasks: BackgroundTasks,
-    format: str = Query(..., regex="^(excel|csv)$")
-):
+@router.get("/allocations/{allocation_id}")
+async def get_allocation(allocation_id: str):
+    """Get specific allocation by ID"""
     try:
-        format = format.lower()
-        logger.info(f"Generating {format} report for allocation {allocation_id}")
+        # Try both _id and allocation_id fields
+        allocation = await AllocationResult.find_one({
+            "$or": [
+                {"_id": allocation_id},
+                {"allocation_id": allocation_id}
+            ]
+        })
         
-        # Try to find the requested allocation
-        allocation = await AllocationResult.find_one({"allocation_id": allocation_id})
-        
-        # If not found, try to get the latest allocation
         if not allocation:
-            logger.info(f"Allocation {allocation_id} not found, attempting to get latest allocation")
-            latest = await AllocationResult.find_one(
-                {"status": "completed"},
-                sort=[("created_at", -1)]
+            raise HTTPException(
+                status_code=404,
+                detail=f"Allocation {allocation_id} not found"
             )
-            if not latest:
-                raise HTTPException(
-                    status_code=404,
-                    detail="No completed allocations found"
-                )
-            allocation = latest
-            allocation_id = latest.allocation_id
-            logger.info(f"Using latest allocation: {allocation_id}")
-
-        file_extension = 'xlsx' if format == 'excel' else 'csv'
-        filename = f'course_allocation_{allocation_id}.{file_extension}'
+            
+        return allocation
         
-        temp_dir = os.path.join(os.getcwd(), 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        file_path = os.path.join(temp_dir, filename)
-
-        # Generate report
-        generate_allocation_report(allocation, file_path, format)
-
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=500, detail="Failed to generate report file")
-
-        # Schedule cleanup
-        background_tasks.add_task(cleanup_temp_file, file_path)
-
-        return FileResponse(
-            path=file_path,
-            filename=filename,
-            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                if format == 'excel' else 'text/csv'
+    except Exception as e:
+        logger.error(f"Error fetching allocation {allocation_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error fetching allocation"
         )
 
+@router.get("/download/{allocation_id}")
+async def download_allocation(
+    allocation_id: str,
+    format: str = Query("excel", regex="^(excel|csv)$")
+):
+    """Download allocation results"""
+    try:
+        # Try both _id and allocation_id fields
+        allocation = await AllocationResult.find_one({
+            "$or": [
+                {"_id": allocation_id},
+                {"allocation_id": allocation_id}
+            ]
+        })
+        
+        if not allocation:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Allocation {allocation_id} not found"
+            )
+            
+        # Generate report
+        output_path = await generate_allocation_report(
+            allocation=allocation,
+            format=format
+        )
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"allocation_report_{allocation_id}.{format}",
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                if format == "excel"
+                else "text/csv"
+            )
+        )
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating report: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error generating report: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error generating report"
+        )
 
 @router.get("/stats", response_model=dict)
 async def get_stats():
@@ -255,34 +324,144 @@ async def get_recent_allocation():
 
 @router.get("/allocations/latest")
 async def get_latest_allocation():
+    """Get the most recent allocation"""
     try:
-        # Get total completed allocations
-        stats = await get_stats()
-        if stats["completedAllocations"] == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="No completed allocations found"
-            )
-
-        # Get most recent completed allocation
+        # Find the latest allocation by created_at
         latest = await AllocationResult.find_one(
-            {"status": "completed"},
             sort=[("created_at", -1)]
         )
         
         if not latest:
             raise HTTPException(
                 status_code=404,
-                detail="No completed allocation found"
+                detail="No allocations found"
             )
-            
-        return {"allocation_id": latest.allocation_id}
 
+        # Convert to response format
+        return {
+            "allocation_id": latest.allocation_id,
+            "status": latest.status,
+            "created_at": latest.created_at,
+            "_id": str(latest.id),  # Convert ObjectId to string
+            "student_allocations": latest.student_allocations,
+            "course_summaries": latest.course_summaries,
+            "issues": latest.issues or []
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting latest allocation: {str(e)}")
+        logger.error(f"Error fetching latest allocation: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Error fetching latest allocation: {str(e)}"
         )
+
+@router.post("/preferences/{student_id}/confirm")
+async def confirm_preferences(student_id: str, request_data: Dict[str, Any]):
+    try:
+        logger.info(f"Confirming preferences for student {student_id}")
+        
+        # Process preferences
+        processed_preferences = {}
+        raw_preferences = request_data.get("preferences", {})
+        
+        for category in CourseCategory:
+            category_key = category.value
+            category_data = raw_preferences.get(category_key, {})
+            
+            if isinstance(category_data, dict):
+                processed_preferences[category_key] = {
+                    "choice1": str(category_data.get("choice1") or "").strip(),
+                    "choice2": str(category_data.get("choice2") or "").strip()
+                }
+            else:
+                processed_preferences[category_key] = {
+                    "choice1": "",
+                    "choice2": ""
+                }
+
+        confirmation_data = {
+            "student_id": student_id,
+            "name": request_data.get("name", "Unknown"),
+            "preferences": processed_preferences,
+            "confirm": request_data.get("confirm", False),
+            "comments": request_data.get("comments", ""),
+            "status": "confirmed" if request_data.get("confirm") else "draft",
+            "updated_at": datetime.utcnow()
+        }
+
+        # Validate the confirmation
+        validated_confirmation = PreferenceConfirmation(**confirmation_data)
+
+        # Update database
+        existing = await StudentPreferenceDB.find_one({"student_id": student_id})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Preferences not found")
+
+        existing.preferences = validated_confirmation.preferences
+        existing.status = validated_confirmation.status
+        existing.comments = validated_confirmation.comments
+        existing.updated_at = datetime.utcnow()
+        await existing.save()
+
+        return {
+            "message": "Preferences confirmed successfully" if validated_confirmation.confirm else "Preferences saved as draft",
+            "status": existing.status
+        }
+
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error confirming preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/admin/summary")
+async def get_preference_summary():
+    try:
+        # Get all confirmed preferences
+        preferences = await StudentPreferenceDB.find(
+            {"status": "confirmed"}
+        ).to_list()
+
+        # Initialize summary
+        summary = {
+            "total_submissions": len(preferences),
+            "course_selections": {},
+            "status_counts": {
+                "draft": 0,
+                "submitted": 0,
+                "confirmed": 0
+            }
+        }
+
+        # Count status distribution
+        all_preferences = await StudentPreferenceDB.find_all().to_list()
+        for pref in all_preferences:
+            summary["status_counts"][pref.status] += 1
+
+        # Count course selections
+        for pref in preferences:
+            for category, choices in pref.preferences.items():
+                if category not in summary["course_selections"]:
+                    summary["course_selections"][category] = {}
+                
+                for choice_num, course in choices.items():
+                    if course not in summary["course_selections"][category]:
+                        summary["course_selections"][category][course] = 0
+                    summary["course_selections"][category][course] += 1
+
+        return summary
+
+    except Exception as e:
+        logger.error(f"Error generating summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/debug/preferences")
+async def debug_preferences():
+    preferences = await get_all_preferences()  # Your existing function
+    return {
+        "count": len(preferences),
+        "data": [pref.dict() if hasattr(pref, 'dict') else pref for pref in preferences]
+    }

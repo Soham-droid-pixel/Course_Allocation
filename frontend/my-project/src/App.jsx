@@ -9,6 +9,7 @@ import AdminDashboard from './pages/admin/Dashboard'
 import AdminReports from './pages/admin/Reports'
 import AdminAnalytics from './pages/admin/Analytics'
 import { getUser } from './services/auth'
+import PreferenceConfirmation from './pages/student/PreferenceConfirmation'
 
 function PrivateRoute({ children, allowedRoles }) {
   const user = getUser()
@@ -45,6 +46,11 @@ function App() {
           <Route path="student/preferences" element={
             <PrivateRoute allowedRoles={['student']}>
               <StudentPreferences />
+            </PrivateRoute>
+          } />
+          <Route path="student/preferences/confirm" element={
+            <PrivateRoute allowedRoles={['student']}>
+              <PreferenceConfirmation />
             </PrivateRoute>
           } />
           <Route path="student/status" element={
