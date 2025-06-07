@@ -30,13 +30,12 @@ class CourseChoice(BaseModel):
             return ""
         return str(v).strip()
 
-    model_config = {
-        "json_schema_extra": {
+    class Config:
+        json_schema_extra = {
             "examples": [
                 {"choice1": "COURSE1", "choice2": "COURSE2"}
             ]
         }
-    }
 
 
 class PreferenceBase(BaseModel):
@@ -83,7 +82,7 @@ class StudentPreference(BaseModel):
             }
 
         # Add additional validation for confirmed status
-        if values.get("status") == PreferenceStatus.CONFIRMED:
+        if values.get("status") == PreferenceStatus.CONFIRMED or values.get("status") == "confirmed":
             mdm_choices = cleaned_prefs.get("MDM", {})
             mdm_choice1 = mdm_choices.get("choice1", "").strip()
             
@@ -118,7 +117,7 @@ class StudentPreference(BaseModel):
 
 
 class AllocationRequest(BaseModel):
-    students: List[StudentPreference]
+    students: List[StudentPreference] = Field(default_factory=list)
 
     @validator("students")
     def validate_student_preferences(cls, students):
@@ -127,7 +126,7 @@ class AllocationRequest(BaseModel):
         
         invalid_students = []
         for student in students:
-            if student.status == PreferenceStatus.CONFIRMED:
+            if student.status == PreferenceStatus.CONFIRMED or student.status == "confirmed":
                 mdm_choice = student.preferences.get("MDM", {}).get("choice1", "").strip()
                 if not mdm_choice:
                     invalid_students.append(student.student_id)
@@ -163,8 +162,9 @@ class CourseEnrollment(BaseModel):
 
 
 class AllocationResponse(BaseModel):
-    student_allocations: List[StudentAllocation]
-    course_summaries: Dict[str, CourseEnrollment]
+    allocation_id: str = Field(default="")
+    student_allocations: List[StudentAllocation] = Field(default_factory=list)
+    course_summaries: Dict[str, CourseEnrollment] = Field(default_factory=dict)
     issues: List[str] = Field(default_factory=list)
 
 
@@ -176,7 +176,7 @@ class DownloadFormat(str, Enum):
 class PreferenceResponse(BaseModel):
     student_id: str
     name: str = Field(default="Unknown")
-    preferences: Dict[str, Dict[str, str]] = Field(default_factory=dict)  # Changed type
+    preferences: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     status: PreferenceStatus = Field(default=PreferenceStatus.DRAFT)
     comments: str = Field(default="")
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -214,7 +214,7 @@ class PreferenceConfirmation(BaseModel):
     confirm: bool = Field(default=False)
     comments: str = Field(default="")
     status: PreferenceStatus = Field(default=PreferenceStatus.DRAFT)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)  # Removed Optional
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     @root_validator(pre=True)
     def clean_data(cls, values):
@@ -237,37 +237,96 @@ class PreferenceConfirmation(BaseModel):
                 "choice2": "" if choice2 is None else str(choice2).strip()
             }
 
-        # Handle datetime with proper validation - ensure it's never None
-        updated_at = values.get("updated_at")
-        if updated_at is None:
-            values["updated_at"] = datetime.utcnow()
-        elif isinstance(updated_at, str):
-            try:
-                values["updated_at"] = datetime.fromisoformat(
-                    updated_at.replace('Z', '+00:00')
+        values["preferences"] = cleaned_prefs
+        
+        # Set status based on confirm flag
+        if values.get("confirm", False):
+            values["status"] = PreferenceStatus.CONFIRMED
+            
+            # Validate MDM choice for confirmed preferences
+            mdm_choices = cleaned_prefs.get("MDM", {})
+            mdm_choice1 = mdm_choices.get("choice1", "").strip()
+            
+            if not mdm_choice1:
+                raise ValueError(
+                    f"Student {values.get('student_id', 'Unknown')}: "
+                    "MDM first choice is mandatory for confirmed preferences"
                 )
-            except (ValueError, TypeError):
-                values["updated_at"] = datetime.utcnow()
-
-        # Set other fields with proper defaults
-        comments = values.get("comments")
-        values.update({
-            "preferences": cleaned_prefs,
-            "comments": "" if comments is None else str(comments),
-            "confirm": bool(values.get("confirm", False)),
-            "status": (
-                PreferenceStatus.CONFIRMED 
-                if values.get("confirm") 
-                else PreferenceStatus.DRAFT
-            ),
-            "name": str(values.get("name") or "Unknown")
-        })
+        else:
+            values["status"] = PreferenceStatus.DRAFT
 
         return values
 
     class Config:
-        validate_assignment = True
-        arbitrary_types_allowed = True
+        json_schema_extra = {
+            "example": {
+                "student_id": "TEST001",
+                "name": "Test Student",
+                "preferences": {
+                    "PECL1": {"choice1": "25PECL13CE11", "choice2": "25PECL13CE12"},
+                    "PECL2": {"choice1": "25PECL13CE21", "choice2": "25PECL13CE22"},
+                    "MDM": {"choice1": "MDM1", "choice2": ""},
+                    "Honors": {"choice1": "", "choice2": ""},
+                    "Minor": {"choice1": "", "choice2": ""},
+                    "Program Elective": {"choice1": "", "choice2": ""},
+                    "Open Elective": {"choice1": "", "choice2": ""}
+                },
+                "confirm": True,
+                "comments": "Updated preferences",
+                "status": "confirmed"
+            }
+        }
+
+
+class ReportRequest(BaseModel):
+    allocation_id: str
+    format: DownloadFormat = DownloadFormat.EXCEL
+    include_waitlist: bool = Field(default=True)
+    include_issues: bool = Field(default=True)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "allocation_id": "abc123-def456",
+                "format": "excel",
+                "include_waitlist": True,
+                "include_issues": True
+            }
+        }
+
+
+class HealthCheck(BaseModel):
+    status: str = "healthy"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    version: str = "1.0.0"
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class AllocationSummary(BaseModel):
+    """Summary response for allocation endpoints when no allocation exists"""
+    allocation_id: Optional[str] = None
+    status: str = "no_allocations"
+    message: str = "No allocations found"
+    created_at: Optional[datetime] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response model"""
+    error: str
+    detail: str
+    status_code: int
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }

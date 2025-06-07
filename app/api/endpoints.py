@@ -212,78 +212,7 @@ async def allocate(request: AllocationRequest):
         logger.error(f"Unexpected error during allocation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/allocations/{allocation_id}")
-async def get_allocation(allocation_id: str):
-    """Get specific allocation by ID"""
-    try:
-        # Try both _id and allocation_id fields
-        allocation = await AllocationResult.find_one({
-            "$or": [
-                {"_id": allocation_id},
-                {"allocation_id": allocation_id}
-            ]
-        })
-        
-        if not allocation:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Allocation {allocation_id} not found"
-            )
-            
-        return allocation
-        
-    except Exception as e:
-        logger.error(f"Error fetching allocation {allocation_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error fetching allocation"
-        )
 
-@router.get("/download/{allocation_id}")
-async def download_allocation(
-    allocation_id: str,
-    format: str = Query("excel", regex="^(excel|csv)$")
-):
-    """Download allocation results"""
-    try:
-        # Try both _id and allocation_id fields
-        allocation = await AllocationResult.find_one({
-            "$or": [
-                {"_id": allocation_id},
-                {"allocation_id": allocation_id}
-            ]
-        })
-        
-        if not allocation:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Allocation {allocation_id} not found"
-            )
-            
-        # Generate report
-        output_path = await generate_allocation_report(
-            allocation=allocation,
-            format=format
-        )
-        
-        return FileResponse(
-            path=output_path,
-            filename=f"allocation_report_{allocation_id}.{format}",
-            media_type=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                if format == "excel"
-                else "text/csv"
-            )
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating report: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error generating report"
-        )
 
 @router.get("/stats", response_model=dict)
 async def get_stats():
@@ -303,7 +232,10 @@ async def get_stats():
         logger.error(f"Error fetching stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/allocations/recent", response_model=dict)
+# Fix for your endpoints.py file
+
+# Remove the duplicate route and fix the existing ones
+@router.get("/allocations/recent")  # This will be /api/allocations/recent
 async def get_recent_allocation():
     try:
         # Get most recent allocation
@@ -312,51 +244,312 @@ async def get_recent_allocation():
         ).sort([("created_at", -1)]).first()
         
         if not recent:
-            raise HTTPException(
-                status_code=404,
-                detail="No completed allocations found"
-            )
+            logger.info("No completed allocations found")
+            return {
+                "allocation_id": None,
+                "status": "no_allocations",
+                "message": "No completed allocations found"
+            }
             
         return {"allocation_id": recent.allocation_id}
     except Exception as e:
         logger.error(f"Error fetching recent allocation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "allocation_id": None,
+            "status": "error", 
+            "message": f"Error fetching recent allocation: {str(e)}"
+        }
 
+# Replace your existing get_latest_allocation function with this:
+
+# Replace your existing get_latest_allocation function with this:
+
+# Replace your existing get_latest_allocation function with this working version:
+
+# THE ISSUE: Route order matters in FastAPI!
+# The route /allocations/{allocation_id} is catching /allocations/latest
+# because "latest" is being treated as an allocation_id
+
+# SOLUTION: Put the specific route BEFORE the dynamic route
+
+# Move this route BEFORE @router.get("/allocations/{allocation_id}")
 @router.get("/allocations/latest")
 async def get_latest_allocation():
-    """Get the most recent allocation"""
+    """Get the most recent allocation - MUST BE BEFORE /allocations/{allocation_id}"""
     try:
-        # Find the latest allocation by created_at
-        latest = await AllocationResult.find_one(
-            sort=[("created_at", -1)]
-        )
+        logger.info("Fetching latest allocation...")
+        
+        latest = await AllocationResult.find_one(sort=[("created_at", -1)])
         
         if not latest:
-            raise HTTPException(
-                status_code=404,
-                detail="No allocations found"
-            )
+            logger.info("No allocations found in database")
+            return {
+                "allocation_id": None,
+                "status": "no_allocations",
+                "message": "No allocations found yet. Please run an allocation first.",
+                "created_at": None
+            }
 
-        # Convert to response format
-        return {
+        # Build response with only existing fields
+        response = {
             "allocation_id": latest.allocation_id,
             "status": latest.status,
             "created_at": latest.created_at,
-            "_id": str(latest.id),  # Convert ObjectId to string
-            "student_allocations": latest.student_allocations,
-            "course_summaries": latest.course_summaries,
-            "issues": latest.issues or []
+            "_id": str(latest.id),
+            "student_allocations": getattr(latest, 'student_allocations', {}),
+            "issues": getattr(latest, 'issues', []) or []
         }
         
-    except HTTPException:
-        raise
+        # Add course data
+        if hasattr(latest, 'course_enrollments'):
+            response["course_enrollments"] = latest.course_enrollments
+        elif hasattr(latest, 'course_summaries'):
+            response["course_summaries"] = latest.course_summaries
+        else:
+            response["course_enrollments"] = {}
+        
+        logger.info(f"Successfully returning latest allocation: {latest.allocation_id}")
+        return response
+        
     except Exception as e:
-        logger.error(f"Error fetching latest allocation: {e}")
+        logger.error(f"Error fetching latest allocation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching latest allocation: {str(e)}"
         )
 
+# This route should come AFTER the /latest route
+@router.get("/allocations/{allocation_id}")
+async def get_allocation(allocation_id: str):
+    """Get specific allocation by ID - MUST BE AFTER /allocations/latest"""
+    try:
+        logger.info(f"Fetching allocation with ID: {allocation_id}")
+        
+        # Remove the "latest" check since it's handled by the route above
+        # if allocation_id == "latest":
+        #     return await get_latest_allocation()
+            
+        # Try both _id and allocation_id fields
+        allocation = await AllocationResult.find_one({
+            "$or": [
+                {"_id": allocation_id},
+                {"allocation_id": allocation_id}
+            ]
+        })
+        
+        if not allocation:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Allocation {allocation_id} not found"
+            )
+            
+        # Build response with only existing fields
+        response = {
+            "allocation_id": allocation.allocation_id,
+            "status": allocation.status,
+            "created_at": allocation.created_at,
+            "_id": str(allocation.id),
+            "student_allocations": getattr(allocation, 'student_allocations', {}),
+            "issues": getattr(allocation, 'issues', []) or []
+        }
+        
+        # Add course data
+        if hasattr(allocation, 'course_enrollments'):
+            response["course_enrollments"] = allocation.course_enrollments
+        elif hasattr(allocation, 'course_summaries'):
+            response["course_summaries"] = allocation.course_summaries
+        else:
+            response["course_enrollments"] = {}
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching allocation {allocation_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error fetching allocation"
+        )
+@router.get("/download/{allocation_id}")
+async def download_allocation(
+    allocation_id: str,
+    background_tasks: BackgroundTasks,
+    format: str = Query("excel", regex="^(excel|csv)$")
+):
+    """Download allocation results"""
+    try:
+        # Try both _id and allocation_id fields
+        allocation = await AllocationResult.find_one({
+            "$or": [
+                {"_id": allocation_id},
+                {"allocation_id": allocation_id}
+            ]
+        })
+        
+        if not allocation:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Allocation {allocation_id} not found"
+            )
+        
+        # Convert database allocation to AllocationResponse format
+        allocation_response = AllocationResponse(
+            allocation_id=allocation.allocation_id,
+            student_allocations=allocation.student_allocations or [],
+            course_summaries=getattr(allocation, 'course_summaries', {}),
+            issues=getattr(allocation, 'issues', [])
+        )
+        
+        # Create temporary file path
+        temp_dir = "/tmp" if os.path.exists("/tmp") else "."
+        file_extension = "xlsx" if format == "excel" else "csv"
+        temp_filename = f"allocation_report_{allocation_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_extension}"
+        output_path = os.path.join(temp_dir, temp_filename)
+        
+        # Generate report with correct parameters
+        generated_path = generate_allocation_report(
+            allocation=allocation_response,
+            output_path=output_path,
+            format=format
+        )
+        
+        # Schedule cleanup
+        background_tasks.add_task(cleanup_temp_file, generated_path)
+        
+        return FileResponse(
+            path=generated_path,
+            filename=f"allocation_report_{allocation_id}.{file_extension}",
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                if format == "excel"
+                else "text/csv"
+            )
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating report: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating report: {str(e)}"
+        )
+    
+@router.get("/debug/latest-simple")
+async def debug_latest_simple():
+    """Test the exact same logic as get_latest_allocation"""
+    try:
+        latest = await AllocationResult.find_one(sort=[("created_at", -1)])
+        
+        if not latest:
+            return {"message": "No allocation found"}
+            
+        # Test each field access
+        response = {"fields": {}}
+        
+        try:
+            response["fields"]["allocation_id"] = latest.allocation_id
+        except Exception as e:
+            response["fields"]["allocation_id"] = f"Error: {e}"
+            
+        try:
+            response["fields"]["status"] = latest.status
+        except Exception as e:
+            response["fields"]["status"] = f"Error: {e}"
+            
+        try:
+            response["fields"]["created_at"] = latest.created_at
+        except Exception as e:
+            response["fields"]["created_at"] = f"Error: {e}"
+            
+        try:
+            response["fields"]["id"] = str(latest.id)
+        except Exception as e:
+            response["fields"]["id"] = f"Error: {e}"
+            
+        try:
+            response["fields"]["student_allocations"] = latest.student_allocations
+        except Exception as e:
+            response["fields"]["student_allocations"] = f"Error: {e}"
+            
+        try:
+            response["fields"]["course_summaries"] = latest.course_summaries
+        except Exception as e:
+            response["fields"]["course_summaries"] = f"Error: {e}"
+            
+        try:
+            response["fields"]["issues"] = latest.issues
+        except Exception as e:
+            response["fields"]["issues"] = f"Error: {e}"
+        
+        return response
+        
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+# Also add a more detailed debug endpoint
+@router.get("/debug/latest-detailed")
+async def debug_latest_detailed():
+    """Detailed debugging for latest allocation"""
+    try:
+        # Test different query methods
+        debug_info = {
+            "methods": {}
+        }
+        
+        # Method 1: find_one with sort
+        try:
+            result1 = await AllocationResult.find_one(sort=[("created_at", -1)])
+            debug_info["methods"]["find_one_with_sort"] = {
+                "success": result1 is not None,
+                "allocation_id": result1.allocation_id if result1 else None,
+                "error": None
+            }
+        except Exception as e:
+            debug_info["methods"]["find_one_with_sort"] = {
+                "success": False,
+                "allocation_id": None,
+                "error": str(e)
+            }
+        
+        # Method 2: find with sort and limit
+        try:
+            result2_list = await AllocationResult.find().sort([("created_at", -1)]).limit(1).to_list()
+            result2 = result2_list[0] if result2_list else None
+            debug_info["methods"]["find_with_sort_limit"] = {
+                "success": result2 is not None,
+                "allocation_id": result2.allocation_id if result2 else None,
+                "error": None
+            }
+        except Exception as e:
+            debug_info["methods"]["find_with_sort_limit"] = {
+                "success": False,
+                "allocation_id": None,
+                "error": str(e)
+            }
+        
+        # Method 3: find_all and sort in Python
+        try:
+            all_results = await AllocationResult.find_all().to_list()
+            result3 = max(all_results, key=lambda x: x.created_at) if all_results else None
+            debug_info["methods"]["find_all_python_sort"] = {
+                "success": result3 is not None,
+                "allocation_id": result3.allocation_id if result3 else None,
+                "total_count": len(all_results),
+                "error": None
+            }
+        except Exception as e:
+            debug_info["methods"]["find_all_python_sort"] = {
+                "success": False,
+                "allocation_id": None,
+                "error": str(e)
+            }
+        
+        return debug_info
+        
+    except Exception as e:
+        return {"error": str(e)}
+# Fix the get_allocation function
 @router.post("/preferences/{student_id}/confirm")
 async def confirm_preferences(student_id: str, request_data: Dict[str, Any]):
     try:
@@ -465,3 +658,162 @@ async def debug_preferences():
         "count": len(preferences),
         "data": [pref.dict() if hasattr(pref, 'dict') else pref for pref in preferences]
     }
+
+# Add this temporary debug endpoint
+@router.get("/debug/allocations")
+async def debug_allocations():
+    try:
+        count = await AllocationResult.find_all().count()
+        all_allocations = await AllocationResult.find_all().to_list()
+        return {
+            "count": count,
+            "allocations": [
+                {
+                    "id": str(alloc.id),
+                    "allocation_id": getattr(alloc, 'allocation_id', None),
+                    "status": getattr(alloc, 'status', None),
+                    "created_at": getattr(alloc, 'created_at', None)
+                } for alloc in all_allocations
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+# Add this debug endpoint to identify the exact error
+@router.get("/debug/latest-step-by-step")
+async def debug_latest_step_by_step():
+    """Debug each step of the latest allocation process"""
+    debug_steps = {}
+    
+    try:
+        # Step 1: Log the start
+        debug_steps["step1_start"] = "✅ Function started"
+        logger.info("Debug: Starting latest allocation fetch")
+        
+        # Step 2: Try the database query
+        try:
+            latest = await AllocationResult.find_one(sort=[("created_at", -1)])
+            debug_steps["step2_query"] = "✅ Database query successful"
+            debug_steps["step2_found"] = latest is not None
+        except Exception as e:
+            debug_steps["step2_query"] = f"❌ Database query failed: {str(e)}"
+            return debug_steps
+        
+        # Step 3: Check if allocation exists
+        if not latest:
+            debug_steps["step3_check"] = "❌ No allocation found"
+            return debug_steps
+        else:
+            debug_steps["step3_check"] = "✅ Allocation found"
+        
+        # Step 4: Access basic fields
+        try:
+            allocation_id = latest.allocation_id
+            debug_steps["step4_allocation_id"] = f"✅ allocation_id: {allocation_id}"
+        except Exception as e:
+            debug_steps["step4_allocation_id"] = f"❌ Error accessing allocation_id: {str(e)}"
+            return debug_steps
+        
+        try:
+            status = latest.status
+            debug_steps["step4_status"] = f"✅ status: {status}"
+        except Exception as e:
+            debug_steps["step4_status"] = f"❌ Error accessing status: {str(e)}"
+            return debug_steps
+        
+        try:
+            created_at = latest.created_at
+            debug_steps["step4_created_at"] = f"✅ created_at: {created_at}"
+        except Exception as e:
+            debug_steps["step4_created_at"] = f"❌ Error accessing created_at: {str(e)}"
+            return debug_steps
+        
+        try:
+            obj_id = str(latest.id)
+            debug_steps["step4_id"] = f"✅ id: {obj_id}"
+        except Exception as e:
+            debug_steps["step4_id"] = f"❌ Error accessing id: {str(e)}"
+            return debug_steps
+        
+        # Step 5: Build basic response
+        try:
+            basic_response = {
+                "allocation_id": allocation_id,
+                "status": status,
+                "created_at": created_at,
+                "_id": obj_id
+            }
+            debug_steps["step5_basic_response"] = "✅ Basic response built"
+        except Exception as e:
+            debug_steps["step5_basic_response"] = f"❌ Error building basic response: {str(e)}"
+            return debug_steps
+        
+        # Step 6: Add student_allocations
+        try:
+            student_allocations = getattr(latest, 'student_allocations', {})
+            basic_response["student_allocations"] = student_allocations
+            debug_steps["step6_student_allocations"] = "✅ Student allocations added"
+        except Exception as e:
+            debug_steps["step6_student_allocations"] = f"❌ Error adding student_allocations: {str(e)}"
+            return debug_steps
+        
+        # Step 7: Add issues
+        try:
+            issues = getattr(latest, 'issues', []) or []
+            basic_response["issues"] = issues
+            debug_steps["step7_issues"] = "✅ Issues added"
+        except Exception as e:
+            debug_steps["step7_issues"] = f"❌ Error adding issues: {str(e)}"
+            return debug_steps
+        
+        # Step 8: Add course data
+        try:
+            if hasattr(latest, 'course_summaries'):
+                basic_response["course_summaries"] = latest.course_summaries
+                debug_steps["step8_course_summaries"] = "✅ Course summaries added"
+            elif hasattr(latest, 'course_enrollments'):
+                basic_response["course_enrollments"] = latest.course_enrollments
+                debug_steps["step8_course_enrollments"] = "✅ Course enrollments added"
+            else:
+                basic_response["course_summaries"] = {}
+                debug_steps["step8_course_fallback"] = "✅ Course fallback added"
+        except Exception as e:
+            debug_steps["step8_course_data"] = f"❌ Error adding course data: {str(e)}"
+            return debug_steps
+        
+        # Step 9: Final response
+        debug_steps["step9_final"] = "✅ All steps completed successfully"
+        debug_steps["final_response"] = basic_response
+        
+        return debug_steps
+        
+    except Exception as e:
+        debug_steps["fatal_error"] = f"❌ Fatal error: {str(e)} (Type: {type(e).__name__})"
+        import traceback
+        debug_steps["traceback"] = traceback.format_exc()
+        return debug_steps
+
+# Also create a minimal working version
+@router.get("/allocations/latest-minimal")
+async def get_latest_allocation_minimal():
+    """Minimal version that only returns basic info"""
+    try:
+        latest = await AllocationResult.find_one(sort=[("created_at", -1)])
+        
+        if not latest:
+            return {
+                "allocation_id": None,
+                "status": "no_allocations",
+                "message": "No allocations found"
+            }
+        
+        # Return only the basic fields we know work
+        return {
+            "allocation_id": latest.allocation_id,
+            "status": latest.status,
+            "created_at": str(latest.created_at),  # Convert to string to avoid serialization issues
+            "_id": str(latest.id)
+        }
+        
+    except Exception as e:
+        logger.error(f"Minimal latest error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
