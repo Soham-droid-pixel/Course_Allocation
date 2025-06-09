@@ -152,37 +152,62 @@ async def get_all_preferences():
 
 @router.post("/allocate", response_model=AllocationResponse)
 async def allocate(request: AllocationRequest):
+    """Trigger course allocation for confirmed students"""
     try:
         logger.info("Starting course allocation process")
-        db_preferences = await StudentPreferenceDB.find_all().to_list()
         
-        if not db_preferences:
-            raise CourseAllocationException("No preferences found for allocation")
-
-        # Convert DB preferences to API model format
-        preferences = []
-        for db_pref in db_preferences:
+        # Get only confirmed students
+        confirmed_students = await StudentPreferenceDB.find(
+            {"status": "confirmed"}
+        ).to_list()
+        
+        if not confirmed_students:
+            raise CourseAllocationException("No confirmed student preferences found")
+            
+        logger.info(f"Found {len(confirmed_students)} confirmed students")
+        
+        # Convert to API models and validate
+        api_students = []
+        validation_errors = []
+        
+        for student in confirmed_students:
             try:
-                converted = StudentPreference(
-                    student_id=db_pref.student_id,
-                    name=db_pref.name,
-                    preferences=db_pref.convert_preferences()
+                # Convert preferences
+                preferences = {}
+                for category, choices in student.preferences.items():
+                    if isinstance(choices, dict):
+                        preferences[category] = {
+                            "choice1": str(choices.get("choice1", "")).strip(),
+                            "choice2": str(choices.get("choice2", "")).strip()
+                        }
+                
+                # Create API model
+                api_student = StudentPreference(
+                    student_id=student.student_id,
+                    name=student.name,
+                    preferences=preferences,
+                    status="confirmed"
                 )
-                preferences.append(converted)
+                api_students.append(api_student)
+                
             except Exception as e:
-                logger.error(f"Error converting preferences for {db_pref.student_id}: {str(e)}")
-                continue
-
-        # Continue with allocation if we have valid preferences
-        if not preferences:
-            raise CourseAllocationException("No valid preferences found after conversion")
-
-        # Validate and allocate
-        validate_mdm_selection(preferences)
-        allocation_result = allocate_courses(preferences)
+                error_msg = f"Invalid data for student {student.student_id}: {str(e)}"
+                validation_errors.append(error_msg)
+                logger.error(error_msg)
+        
+        if validation_errors:
+            logger.warning(f"Found {len(validation_errors)} validation errors")
+        
+        if not api_students:
+            raise CourseAllocationException("No valid student preferences after validation")
+            
+        logger.info(f"Processing {len(api_students)} valid students")
+        
+        # Run allocation
+        allocation_result = allocate_courses(api_students)
         
         # Save allocation result
-        allocation_id = str(uuid.uuid4())
+        allocation_id = allocation_result.allocation_id
         db_allocation = AllocationResult(
             allocation_id=allocation_id,
             student_allocations={
@@ -193,23 +218,29 @@ async def allocate(request: AllocationRequest):
                 course_id: course.students 
                 for course_id, course in allocation_result.course_summaries.items()
             },
-            created_at=datetime.utcnow(),
             status="completed",
-            issues=allocation_result.issues
+            issues=allocation_result.issues + validation_errors
         )
+        
         await db_allocation.insert()
         
-        logger.info(f"Allocation completed. ID: {allocation_id}")
+        # Update student allocation status
+        for student in confirmed_students:
+            student.enrollment_status = "allocated"
+            await student.save()
+            
+        logger.info(f"Allocation completed successfully. ID: {allocation_id}")
+        
         return {
             "allocation_id": allocation_id,
             **allocation_result.dict()
         }
-
+        
     except CourseAllocationException as e:
         logger.error(f"Allocation error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error during allocation: {str(e)}")
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

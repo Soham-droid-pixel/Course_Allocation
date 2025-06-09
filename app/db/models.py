@@ -76,6 +76,32 @@ class StudentPreference(Document):
             [("created_at", -1)],
             [("enrollment_status", 1)]
         ]
+    @validator("status", pre=True, always=True)
+    def validate_status_with_mdm(cls, v, values):
+        """Ensure confirmed students have MDM choice"""
+        if v == "confirmed":
+            try:
+                prefs = values.get("preferences", {})
+                if not isinstance(prefs, dict):
+                    raise ValueError("Invalid preferences format")
+                    
+                mdm_prefs = prefs.get("MDM", {})
+                if not isinstance(mdm_prefs, dict):
+                    raise ValueError("Invalid MDM preferences format")
+                    
+                mdm_choice = str(mdm_prefs.get("choice1", "")).strip()
+                if not mdm_choice:
+                    raise ValueError("MDM first choice is required for confirmation")
+                    
+                # Optional: Validate against allowed MDM choices
+                valid_mdm_choices = ["MDM1", "MDM2"]  # Move to config
+                if mdm_choice not in valid_mdm_choices:
+                    raise ValueError(f"Invalid MDM choice. Must be one of: {', '.join(valid_mdm_choices)}")
+                    
+            except Exception as e:
+                raise ValueError(f"MDM validation failed: {str(e)}")
+            
+        return v
 
 
 class AllocationResult(Document):

@@ -1,231 +1,372 @@
-from typing import List, Dict, Optional
+import logging
+from typing import Dict, List, Set, Optional
 from collections import defaultdict
 from datetime import datetime
-import logging
-import json
-import uuid
 
 from ..api.models import (
-    StudentPreference, AllocationResponse, StudentAllocation, 
-    CourseEnrollment, PreferenceStatus, CourseCategory
+    StudentPreference, 
+    AllocationResponse, 
+    StudentAllocation, 
+    CourseEnrollment, 
+    CourseCategory
 )
 from ..core.exceptions import CourseAllocationException
+from app.utils.validation import validate_mdm_selection, validate_student_preferences, validate_student_data_integrity
 
-# Configure logger
 logger = logging.getLogger("course_allocation_service")
 
-# Course capacity constants
-COURSE_CAPACITY = 60
-MIN_ENROLLMENT = 20
+# Course capacity and minimum enrollment configuration
+COURSE_CONFIG = {
+    "default_capacity": 60,
+    "min_enrollment": 20,
+}
 
-def validate_mdm_selections(preferences: List[StudentPreference]) -> List[str]:
-    """Validates MDM course selections"""
-    invalid_students = []
-    valid_mdm_courses = ["MDM1", "MDM2"]  # Valid MDM courses
+def allocate_courses(students: List[StudentPreference]) -> AllocationResponse:
+    """
+    Main allocation function that processes all students in batch.
     
-    logger.info(f"Starting MDM validation for {len(preferences)} students")
-    
-    for student in preferences:
-        # Fix: Compare with string value instead of enum
-        if student.status != "confirmed":
-            continue
-            
-        logger.info(f"Validating MDM for student {student.student_id}")
+    Args:
+        students: List of all student preferences
         
-        # Get MDM preferences
-        mdm_prefs = student.preferences.get("MDM", {})
-        if not isinstance(mdm_prefs, dict):
-            logger.warning(f"Invalid MDM preference format for student {student.student_id}")
-            invalid_students.append(student.student_id)
-            continue
-
-        # Extract and validate choice1
-        mdm_choice1 = str(mdm_prefs.get("choice1", "")).strip()
-        logger.info(f"Student {student.student_id} MDM choice1: {mdm_choice1}")
-
-        if not mdm_choice1 or mdm_choice1 not in valid_mdm_courses:
-            logger.warning(
-                f"Student {student.student_id}: Invalid MDM choice "
-                f"'{mdm_choice1}', valid options are: {valid_mdm_courses}"
-            )
-            invalid_students.append(student.student_id)
+    Returns:
+        AllocationResponse with complete allocation results
+    """
+    logger.info(f"Starting batch allocation for {len(students)} students")
+    
+    # Debug: Log data structure
+    if students:
+        sample = students[0]
+        logger.info(f"Sample student type: {type(sample)}")
+        logger.info(f"Sample student attributes: {dir(sample)}")
+        if hasattr(sample, 'preferences'):
+            logger.info(f"Sample preferences type: {type(sample.preferences)}")
+            logger.info(f"Sample preferences: {sample.preferences}")
+        if hasattr(sample, 'status'):
+            logger.info(f"Sample status: {sample.status}")
+    
+    # Filter students - only process confirmed students
+    confirmed_students = []
+    validation_issues = []
+    
+    for student in students:
+        student_id = getattr(student, 'student_id', 'Unknown')
+        status = getattr(student, 'status', 'draft')
+        
+        # Only process confirmed students
+        if status != 'confirmed':
+            logger.debug(f"Skipping student {student_id} with status: {status}")
             continue
             
-        logger.info(f"Student {student.student_id}: Valid MDM choice found")
-
-    if invalid_students:
-        logger.warning(f"Found {len(invalid_students)} invalid MDM selections")
-        raise CourseAllocationException(
-            f"Invalid MDM selections for students: {', '.join(invalid_students)} "
-            "(invalid or missing selection)"
+        # Validate that student has preferences
+        if not hasattr(student, 'preferences') or not student.preferences:
+            issue = f"Student {student_id}: No preferences found despite confirmed status"
+            validation_issues.append(issue)
+            continue
+            
+        # Check MDM preference specifically
+        mdm_prefs = student.preferences.get('MDM', {})
+        mdm_choice1 = ''
+        
+        if isinstance(mdm_prefs, dict):
+            mdm_choice1 = str(mdm_prefs.get('choice1', '')).strip()
+        
+        if not mdm_choice1:
+            issue = f"Student {student_id}: Missing MDM first choice despite confirmed status"
+            validation_issues.append(issue)
+            continue
+            
+        confirmed_students.append(student)
+    
+    logger.info(f"Processing {len(confirmed_students)} confirmed students out of {len(students)} total")
+    
+    if not confirmed_students:
+        return AllocationResponse(
+            student_allocations=[],
+            course_summaries={},
+            issues=validation_issues + ["No confirmed students found for allocation"]
         )
     
-    logger.info("All MDM selections are valid")
-    return invalid_students
-
-def allocate_courses(preferences: List[StudentPreference]) -> AllocationResponse:
-    """Allocate courses based on student preferences with improved error handling"""
-    allocation_id = str(uuid.uuid4())
-    logger.info(f"Starting allocation process with ID: {allocation_id}")
-    
+    # Pre-validation checks on confirmed students only
     try:
-        # Convert preferences to proper format if needed
-        validated_preferences = []
-        for pref in preferences:
-            if isinstance(pref, dict):
-                pref = StudentPreference(**pref)
-            validated_preferences.append(pref)
+        # Check data integrity
+        integrity_issues = validate_student_data_integrity(confirmed_students)
+        if integrity_issues:
+            logger.warning(f"Data integrity issues found: {len(integrity_issues)}")
+            validation_issues.extend(integrity_issues)
         
-        # Validate MDM selections first
-        invalid_students = validate_mdm_selections(validated_preferences)
-        if invalid_students:
-            logger.error(f"Invalid MDM selections found: {invalid_students}")
-            raise CourseAllocationException(
-                f"Invalid MDM selections for students: {', '.join(invalid_students)} "
-                "(invalid or missing selection)"
-            )
+        # Validate MDM selections for confirmed students
+        validate_mdm_selection(confirmed_students)
+        logger.info("MDM validation passed for confirmed students")
+        
+        # Get general validation issues
+        general_issues = validate_student_preferences(confirmed_students)
+        validation_issues.extend(general_issues)
+        
+    except CourseAllocationException as e:
+        logger.error(f"Validation failed: {str(e)}")
+        return AllocationResponse(
+            student_allocations=[],
+            course_summaries={},
+            issues=validation_issues + [f"Validation Error: {str(e)}"]
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during validation: {str(e)}")
+        return AllocationResponse(
+            student_allocations=[],
+            course_summaries={},
+            issues=validation_issues + [f"Unexpected validation error: {str(e)}"]
+        )
+    
+    # Initialize tracking structures
+    course_enrollments = defaultdict(lambda: {
+        "enrolled": [],
+        "capacity": COURSE_CONFIG["default_capacity"],
+        "min_enrollment": COURSE_CONFIG["min_enrollment"]
+    })
+    
+    student_allocations = {}
+    allocation_issues = validation_issues.copy()
+    
+    # Phase 1: Allocate first choices
+    logger.info("Phase 1: Processing first choices")
+    _allocate_first_choices(confirmed_students, course_enrollments, student_allocations, allocation_issues)
+    
+    # Phase 2: Allocate second choices for unallocated students
+    logger.info("Phase 2: Processing second choices")
+    _allocate_second_choices(confirmed_students, course_enrollments, student_allocations, allocation_issues)
+    
+    # Phase 3: Handle minimum enrollment requirements
+    logger.info("Phase 3: Checking minimum enrollment requirements")
+    canceled_courses = _handle_minimum_enrollment(course_enrollments, allocation_issues)
+    
+    # Phase 4: Reallocate students from canceled courses
+    if canceled_courses:
+        logger.info(f"Phase 4: Reallocating students from {len(canceled_courses)} canceled courses")
+        _reallocate_canceled_courses(canceled_courses, confirmed_students, course_enrollments, 
+                                   student_allocations, allocation_issues)
+    
+    # Build final response
+    response = _build_allocation_response(course_enrollments, student_allocations, allocation_issues)
+    
+    logger.info(f"Allocation completed. Total issues: {len(allocation_issues)}")
+    return response
 
-        # Only proceed with confirmed preferences that have valid MDM choices
-        valid_preferences = []
-        for pref in validated_preferences:
-            # Fix: Compare with string value instead of enum
-            if pref.status == "confirmed":
-                mdm_prefs = pref.preferences.get("MDM", {})
-                if isinstance(mdm_prefs, dict):
-                    mdm_choice1 = mdm_prefs.get("choice1", "")
-                    if mdm_choice1 and str(mdm_choice1).strip():
-                        valid_preferences.append(pref)
-                        logger.info(f"Added student {pref.student_id} to valid preferences")
 
-        if not valid_preferences:
-            logger.warning("No valid confirmed preferences found")
-            return AllocationResponse(
-                allocation_id=allocation_id,
-                student_allocations=[],
-                course_summaries={},
-                issues=["No valid confirmed preferences found"]
-            )
-
-        # Initialize tracking structures
-        course_enrollments: Dict[str, CourseEnrollment] = {}
-        student_allocations: List[StudentAllocation] = []
-        issues: List[str] = []
-
-        logger.info(f"Processing {len(valid_preferences)} valid preferences")
-
-        # First pass: Try to allocate first choices
-        for student in valid_preferences:
-            logger.info(f"Processing first choices for student {student.student_id}")
-            allocation = StudentAllocation(
-                student_id=student.student_id,
-                name=student.name,
-                allocations={},
-                issues=[]
-            )
-
-            for category, choices in student.preferences.items():
-                if not choices or not isinstance(choices, dict):
-                    continue
-
-                choice1 = choices.get("choice1", "")
-                if not choice1 or not str(choice1).strip():
-                    continue
-
-                course_id = str(choice1).strip()
-                logger.info(f"Attempting to allocate {course_id} for student {student.student_id} in category {category}")
+def _allocate_first_choices(students: List[StudentPreference], 
+                          course_enrollments: Dict, 
+                          student_allocations: Dict, 
+                          issues: List[str]) -> None:
+    """Allocate first choices for all students"""
+    
+    for student in students:
+        # Safely get student ID
+        student_id = getattr(student, 'student_id', 'Unknown')
+        student_name = getattr(student, 'name', 'Unknown')
+        
+        student_allocations[student_id] = {
+            "student_id": student_id,
+            "name": student_name,
+            "allocations": {},
+            "issues": []
+        }
+        
+        # Check if student has preferences
+        if not hasattr(student, 'preferences') or not student.preferences:
+            issue = f"Student {student_id}: No preferences found"
+            issues.append(issue)
+            student_allocations[student_id]["issues"].append(issue)
+            continue
+        
+        # Process each category
+        for category, choices in student.preferences.items():
+            if not choices or not isinstance(choices, dict):
+                continue
                 
-                if course_id not in course_enrollments:
-                    course_enrollments[course_id] = CourseEnrollment(
-                        course_id=course_id,
-                        capacity=COURSE_CAPACITY,
-                        min_enrollment=MIN_ENROLLMENT,
-                        enrolled=0,
-                        students=[],
-                        waitlist=[]
-                    )
-
-                course = course_enrollments[course_id]
-                if course.enrolled < course.capacity:
-                    course.students.append(student.student_id)
-                    course.enrolled += 1
-                    allocation.allocations[category] = course_id
-                    logger.info(f"Allocated {course_id} to student {student.student_id}")
-                else:
-                    course.waitlist.append(student.student_id)
-                    allocation.issues.append(f"Waitlisted for {course_id} in {category}")
-                    logger.info(f"Waitlisted student {student.student_id} for {course_id}")
-
-            student_allocations.append(allocation)
-
-        # Second pass: Try to allocate second choices for unallocated students
-        logger.info("Starting second pass for unallocated categories")
-        for student in student_allocations:
-            student_pref = next(
-                (p for p in valid_preferences if p.student_id == student.student_id),
-                None
-            )
+            first_choice = str(choices.get("choice1", "")).strip()
             
-            if not student_pref:
+            # Skip empty choices
+            if not first_choice:
                 continue
             
-            unallocated_categories = set(student_pref.preferences.keys()) - set(student.allocations.keys())
-            logger.info(f"Student {student.student_id} has unallocated categories: {unallocated_categories}")
+            # Validate MDM selection is mandatory (double-check)
+            if category == "MDM" and not first_choice:
+                issue = f"Student {student_id}: MDM first choice is mandatory"
+                issues.append(issue)
+                student_allocations[student_id]["issues"].append(issue)
+                continue
             
-            for category in unallocated_categories:
-                category_prefs = student_pref.preferences.get(category, {})
-                if not isinstance(category_prefs, dict):
-                    continue
-                    
-                choice2 = category_prefs.get("choice2", "")
-                if not choice2 or not str(choice2).strip():
-                    continue
+            # Try to allocate first choice
+            if _can_allocate_course(first_choice, course_enrollments):
+                _allocate_student_to_course(student_id, first_choice, 
+                                          course_enrollments, category)
+                student_allocations[student_id]["allocations"][category] = first_choice
+                logger.debug(f"Allocated {student_id} to {first_choice} (first choice)")
+            else:
+                # Mark for second choice processing
+                student_allocations[student_id]["allocations"][category] = None
 
-                course_id = str(choice2).strip()
-                logger.info(f"Attempting second choice {course_id} for student {student.student_id}")
-                
-                if course_id not in course_enrollments:
-                    course_enrollments[course_id] = CourseEnrollment(
-                        course_id=course_id,
-                        capacity=COURSE_CAPACITY,
-                        min_enrollment=MIN_ENROLLMENT,
-                        enrolled=0,
-                        students=[],
-                        waitlist=[]
-                    )
 
-                course = course_enrollments[course_id]
-                if course.enrolled < course.capacity:
-                    course.students.append(student.student_id)
-                    course.enrolled += 1
-                    student.allocations[category] = course_id
-                    logger.info(f"Allocated second choice {course_id} to student {student.student_id}")
-                else:
-                    course.waitlist.append(student.student_id)
-                    student.issues.append(
-                        f"Waitlisted for second choice {course_id} in {category}"
-                    )
-                    logger.info(f"Waitlisted student {student.student_id} for second choice {course_id}")
-
-        # Check minimum enrollments
-        for course_id, course in course_enrollments.items():
-            if course.enrolled < course.min_enrollment:
-                issue_msg = f"Course {course_id} has insufficient enrollment: {course.enrolled}"
-                issues.append(issue_msg)
-                logger.warning(issue_msg)
-
-        logger.info(f"Allocation completed successfully for {len(student_allocations)} students with ID: {allocation_id}")
+def _allocate_second_choices(students: List[StudentPreference], 
+                           course_enrollments: Dict, 
+                           student_allocations: Dict, 
+                           issues: List[str]) -> None:
+    """Allocate second choices for students who didn't get first choice"""
+    
+    for student in students:
+        student_id = getattr(student, 'student_id', 'Unknown')
+        student_alloc = student_allocations.get(student_id)
         
-        return AllocationResponse(
-            allocation_id=allocation_id,
-            student_allocations=student_allocations,
-            course_summaries=course_enrollments,
-            issues=issues
-        )
+        if not student_alloc:
+            continue
+        
+        # Check if student has preferences
+        if not hasattr(student, 'preferences') or not student.preferences:
+            continue
+        
+        for category, choices in student.preferences.items():
+            # Skip if already allocated or no choices
+            if (student_alloc["allocations"].get(category) or 
+                not choices or not isinstance(choices, dict)):
+                continue
+            
+            second_choice = str(choices.get("choice2", "")).strip()
+            if not second_choice:
+                # No second choice, but first choice was full
+                if student_alloc["allocations"].get(category) is None:
+                    issue = f"Student {student_id}: Could not allocate {category} - first choice full, no second choice"
+                    issues.append(issue)
+                    student_alloc["issues"].append(issue)
+                continue
+            
+            # Try to allocate second choice
+            if _can_allocate_course(second_choice, course_enrollments):
+                _allocate_student_to_course(student_id, second_choice, 
+                                          course_enrollments, category)
+                student_alloc["allocations"][category] = second_choice
+                logger.debug(f"Allocated {student_id} to {second_choice} (second choice)")
+            else:
+                # Could not allocate either choice
+                issue = f"Student {student_id}: Could not allocate {category} - both choices full"
+                issues.append(issue)
+                student_alloc["issues"].append(issue)
 
-    except CourseAllocationException:
-        # Re-raise CourseAllocationException as-is
-        raise
-    except Exception as e:
-        error_msg = f"Unexpected error during allocation: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        raise CourseAllocationException(error_msg)
+
+def _handle_minimum_enrollment(course_enrollments: Dict, issues: List[str]) -> Set[str]:
+    """Check minimum enrollment and cancel courses if needed"""
+    canceled_courses = set()
+    
+    for course_id, enrollment_data in course_enrollments.items():
+        enrolled_count = len(enrollment_data["enrolled"])
+        min_required = enrollment_data["min_enrollment"]
+        
+        if enrolled_count < min_required:
+            canceled_courses.add(course_id)
+            issue = f"Course {course_id} canceled - only {enrolled_count} students (minimum: {min_required})"
+            issues.append(issue)
+            logger.warning(issue)
+    
+    return canceled_courses
+
+
+def _reallocate_canceled_courses(canceled_courses: Set[str], 
+                                students: List[StudentPreference],
+                                course_enrollments: Dict, 
+                                student_allocations: Dict, 
+                                issues: List[str]) -> None:
+    """Reallocate students from canceled courses to their second choices"""
+    
+    for course_id in canceled_courses:
+        affected_students = course_enrollments[course_id]["enrolled"].copy()
+        
+        for student_id in affected_students:
+            # Remove from canceled course
+            course_enrollments[course_id]["enrolled"].remove(student_id)
+            
+            # Find student's preferences
+            student = next((s for s in students if getattr(s, 'student_id', None) == student_id), None)
+            if not student or not hasattr(student, 'preferences'):
+                continue
+            
+            # Find which category this course was for
+            allocated_category = None
+            if student_id in student_allocations:
+                for category, allocation in student_allocations[student_id]["allocations"].items():
+                    if allocation == course_id:
+                        allocated_category = category
+                        break
+            
+            if not allocated_category:
+                continue
+            
+            # Try to reallocate to second choice
+            choices = student.preferences.get(allocated_category, {})
+            if isinstance(choices, dict):
+                second_choice = str(choices.get("choice2", "")).strip()
+                reallocated = False
+                
+                if second_choice and _can_allocate_course(second_choice, course_enrollments):
+                    _allocate_student_to_course(student_id, second_choice, 
+                                              course_enrollments, allocated_category)
+                    student_allocations[student_id]["allocations"][allocated_category] = second_choice
+                    reallocated = True
+                    logger.info(f"Reallocated {student_id} from {course_id} to {second_choice}")
+                
+                if not reallocated:
+                    # Could not reallocate
+                    student_allocations[student_id]["allocations"][allocated_category] = None
+                    issue = f"Student {student_id}: Could not reallocate from canceled course {course_id}"
+                    issues.append(issue)
+                    student_allocations[student_id]["issues"].append(issue)
+
+
+def _can_allocate_course(course_id: str, course_enrollments: Dict) -> bool:
+    """Check if a course has available capacity"""
+    if not course_id:
+        return False
+    
+    enrollment_data = course_enrollments[course_id]
+    current_enrollment = len(enrollment_data["enrolled"])
+    capacity = enrollment_data["capacity"]
+    
+    return current_enrollment < capacity
+
+
+def _allocate_student_to_course(student_id: str, course_id: str, 
+                               course_enrollments: Dict, category: str) -> None:
+    """Allocate a student to a specific course"""
+    course_enrollments[course_id]["enrolled"].append(student_id)
+
+
+def _build_allocation_response(course_enrollments: Dict, 
+                             student_allocations: Dict, 
+                             issues: List[str]) -> AllocationResponse:
+    """Build the final allocation response"""
+    
+    # Build student allocation list
+    student_allocation_list = []
+    for student_data in student_allocations.values():
+        allocation = StudentAllocation(
+            student_id=student_data["student_id"],
+            name=student_data["name"],
+            allocations=student_data["allocations"],
+            issues=student_data["issues"]
+        )
+        student_allocation_list.append(allocation)
+    
+    # Build course summaries
+    course_summaries = {}
+    for course_id, enrollment_data in course_enrollments.items():
+        if enrollment_data["enrolled"]:  # Only include courses with enrollments
+            course_summaries[course_id] = CourseEnrollment(
+                course_id=course_id,
+                capacity=enrollment_data["capacity"],
+                min_enrollment=enrollment_data["min_enrollment"],
+                enrolled=len(enrollment_data["enrolled"]),
+                students=enrollment_data["enrolled"]
+            )
+    
+    return AllocationResponse(
+        student_allocations=student_allocation_list,
+        course_summaries=course_summaries,
+        issues=issues
+    )

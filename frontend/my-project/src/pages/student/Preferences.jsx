@@ -59,7 +59,7 @@ const COURSES = {
     { id: 'M2', name: '3D Printing', credits: 3 }
   ],
   [CourseCategory.MDM]: [
-    { id: 'MDM1', name: 'Emotiinal and Spiritual Intelligence', credits: 1 },
+    { id: 'MDM1', name: 'Emotional and Spiritual Intelligence', credits: 1 },
     { id: 'MDM2', name: 'Health,Wellness and Pyschology', credits: 1 }
   ]
 }
