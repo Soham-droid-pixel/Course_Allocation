@@ -27,8 +27,17 @@ function PrivateRoute({ children, allowedRoles }) {
 
 function App() {
   return (
-    <>
-      <Toaster position="top-right" />
+    <div className="App">
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+          },
+        }}
+      />
       <Routes>
         <Route path="/login" element={<Login />} />
         
@@ -80,7 +89,7 @@ function App() {
           <Route index element={<Navigate to="/student/dashboard" />} />
         </Route>
       </Routes>
-    </>
+    </div>
   )
 }
 

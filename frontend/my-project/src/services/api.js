@@ -47,27 +47,34 @@ export const submitPreferences = async (preferences) => {
 
 export const triggerAllocation = async () => {
   try {
-    // Get all student preferences first
-    const allPreferences = await api.get('/preferences');
-    
-    const response = await api.post('/allocate', {
-      students: allPreferences.data // Match the AllocationRequest model
+    const response = await fetch('http://localhost:8000/api/allocate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // Add empty body since the endpoint expects AllocationRequest
+      body: JSON.stringify({})
     });
-    
-    if (response.data.issues?.length > 0) {
-      response.data.issues.forEach(issue => {
-        toast.warning(issue);
-      });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
+
+    const data = await response.json();
     
-    return response.data;
+    // Ensure we return the expected format
+    return {
+      allocation_id: data.allocation_id,
+      student_allocations: data.student_allocations,
+      course_summaries: data.course_summaries,
+      issues: data.issues || []
+    };
   } catch (error) {
-    if (error.response?.status === 422) {
-      toast.error('Invalid allocation request format');
-    }
-    throw error.response?.data?.detail || error.message;
+    console.error('Allocation API error:', error);
+    throw new Error(error.message || 'Failed to trigger allocation');
   }
-}
+};
 
 export const getLatestAllocationId = async () => {
   try {
@@ -95,68 +102,31 @@ export const getLatestAllocationId = async () => {
   }
 }
 
-export const downloadReport = async (allocationId, format = 'excel') => {
-    try {
-        // First verify the allocation exists
-        const verifyResponse = await api.get(`/allocations/${allocationId}`);
-        if (!verifyResponse.data) {
-            throw new Error('Allocation not found');
-        }
+export const downloadReport = async (allocationId, format) => {
+  try {
+    const response = await fetch(`http://localhost:8000/api/download/${allocationId}?format=${format}`, {
+      method: 'GET',
+    });
 
-        const response = await api.get(
-            `/download/${allocationId}?format=${format}`,
-            { 
-                responseType: 'blob',
-                timeout: 30000,
-                headers: {
-                    'Accept': 'application/octet-stream'
-                }
-            }
-        );
-        
-        if (!response.data) {
-            throw new Error('Empty response received');
-        }
-
-        // Handle error responses
-        if (response.data.type.includes('application/json')) {
-            const text = await response.data.text();
-            const error = JSON.parse(text);
-            throw new Error(error.detail || 'Download failed');
-        }
-        
-        // Create and trigger download
-        const blob = new Blob([response.data], {
-            type: format === 'excel' 
-                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                : 'text/csv'
-        });
-        
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        
-        // Set filename
-        const timestamp = new Date().toISOString().split('T')[0];
-        const extension = format === 'excel' ? 'xlsx' : 'csv';
-        const filename = `allocation_report_${timestamp}.${extension}`;
-            
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        
-        // Cleanup
-        window.URL.revokeObjectURL(url);
-        link.remove();
-        
-        return true;
-    } catch (error) {
-        console.error('Download error:', error);
-        if (error.response?.status === 404) {
-            throw new Error('Allocation not found');
-        }
-        throw new Error(error.message || 'Failed to download report');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Download failed: ${errorText}`);
     }
+
+    // Handle file download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `allocation_report_${allocationId}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('Download API error:', error);
+    throw new Error(error.message || 'Failed to download report');
+  }
 };
 
 export const confirmPreferences = async (studentId, data) => {

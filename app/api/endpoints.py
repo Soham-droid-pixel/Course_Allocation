@@ -19,6 +19,8 @@ from .models import (
     StudentPreference, 
     AllocationRequest, 
     AllocationResponse, 
+    StudentAllocation,    # Added
+    CourseEnrollment,     # Added
     DownloadFormat, 
     CourseCategory,
     PreferenceResponse,
@@ -166,50 +168,35 @@ async def allocate(request: AllocationRequest):
             
         logger.info(f"Found {len(confirmed_students)} confirmed students")
         
-        # Convert to API models and validate
+        # Convert to API models
         api_students = []
-        validation_errors = []
         
         for student in confirmed_students:
             try:
-                # Convert preferences
-                preferences = {}
-                for category, choices in student.preferences.items():
-                    if isinstance(choices, dict):
-                        preferences[category] = {
-                            "choice1": str(choices.get("choice1", "")).strip(),
-                            "choice2": str(choices.get("choice2", "")).strip()
-                        }
-                
-                # Create API model
+                # Create API model with proper data conversion
                 api_student = StudentPreference(
                     student_id=student.student_id,
                     name=student.name,
-                    preferences=preferences,
+                    preferences=student.preferences,  # Already in correct format
                     status="confirmed"
                 )
                 api_students.append(api_student)
                 
             except Exception as e:
-                error_msg = f"Invalid data for student {student.student_id}: {str(e)}"
-                validation_errors.append(error_msg)
-                logger.error(error_msg)
-        
-        if validation_errors:
-            logger.warning(f"Found {len(validation_errors)} validation errors")
+                logger.error(f"Error converting student {student.student_id}: {str(e)}")
+                continue
         
         if not api_students:
-            raise CourseAllocationException("No valid student preferences after validation")
+            raise CourseAllocationException("No valid student preferences after conversion")
             
         logger.info(f"Processing {len(api_students)} valid students")
         
         # Run allocation
         allocation_result = allocate_courses(api_students)
         
-        # Save allocation result
-        allocation_id = allocation_result.allocation_id
+        # Save allocation result with proper data structure
         db_allocation = AllocationResult(
-            allocation_id=allocation_id,
+            allocation_id=allocation_result.allocation_id,
             student_allocations={
                 student.student_id: student.allocations 
                 for student in allocation_result.student_allocations
@@ -219,22 +206,24 @@ async def allocate(request: AllocationRequest):
                 for course_id, course in allocation_result.course_summaries.items()
             },
             status="completed",
-            issues=allocation_result.issues + validation_errors
+            issues=allocation_result.issues
         )
         
         await db_allocation.insert()
         
-        # Update student allocation status
-        for student in confirmed_students:
-            student.enrollment_status = "allocated"
-            await student.save()
-            
-        logger.info(f"Allocation completed successfully. ID: {allocation_id}")
+        logger.info(f"Allocation completed successfully. ID: {allocation_result.allocation_id}")
         
-        return {
-            "allocation_id": allocation_id,
-            **allocation_result.dict()
-        }
+        # After successful allocation, update student status
+        try:
+            for student in confirmed_students:
+                student.enrollment_status = "allocated"
+                await student.save()
+            
+            logger.info(f"Updated enrollment status for {len(confirmed_students)} students")
+        except Exception as e:
+            logger.warning(f"Failed to update student status: {str(e)}")
+        
+        return allocation_result
         
     except CourseAllocationException as e:
         logger.error(f"Allocation error: {str(e)}")
@@ -248,16 +237,23 @@ async def allocate(request: AllocationRequest):
 @router.get("/stats", response_model=dict)
 async def get_stats():
     try:
-        # Get all preferences
-        total_submissions = await StudentPreferenceDB.find_all().count()
+        # Get total confirmed students (these are the ones that should be allocated)
+        confirmed_students = await StudentPreferenceDB.find({"status": "confirmed"}).count()
         
-        # Get completed allocations
-        completed = await AllocationResult.find({"status": "completed"}).count()
+        # Get completed allocations count
+        completed_allocations = await AllocationResult.find({"status": "completed"}).count()
+        
+        # Get latest allocation to count actually allocated students
+        latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
+        
+        allocated_students = 0
+        if latest_allocation and latest_allocation.student_allocations:
+            allocated_students = len(latest_allocation.student_allocations)
 
         return {
-            "totalSubmissions": total_submissions,
-            "pendingAllocations": total_submissions - completed,
-            "completedAllocations": completed
+            "totalSubmissions": confirmed_students,  # Only count confirmed students
+            "pendingAllocations": max(0, confirmed_students - allocated_students),  # Students not yet allocated
+            "completedAllocations": allocated_students  # Actually allocated students
         }
     except Exception as e:
         logger.error(f"Error fetching stats: {str(e)}")
@@ -424,11 +420,40 @@ async def download_allocation(
                 detail=f"Allocation {allocation_id} not found"
             )
         
-        # Convert database allocation to AllocationResponse format
+        # Convert database format to API format properly
+        student_allocations = []
+        raw_student_allocations = getattr(allocation, 'student_allocations', {})
+        
+        for student_id, allocations_dict in raw_student_allocations.items():
+            student_allocation = StudentAllocation(
+                student_id=student_id,
+                name=f"Student {student_id}",  # You might want to fetch actual names
+                allocations=allocations_dict,
+                issues=[]  # Add student-specific issues if available
+            )
+            student_allocations.append(student_allocation)
+        
+        # Convert course enrollments to CourseEnrollment objects
+        course_summaries = {}
+        raw_course_enrollments = getattr(allocation, 'course_enrollments', {})
+        
+        for course_id, student_list in raw_course_enrollments.items():
+            course_enrollment = CourseEnrollment(
+                course_id=course_id,
+                name=f"Course {course_id}",  # You might want to fetch actual names
+                capacity=60,  # Default values - you might want to store these
+                min_enrollment=20,
+                enrolled=len(student_list),
+                students=student_list,
+                waitlist=[]
+            )
+            course_summaries[course_id] = course_enrollment
+        
+        # Create proper AllocationResponse
         allocation_response = AllocationResponse(
             allocation_id=allocation.allocation_id,
-            student_allocations=allocation.student_allocations or [],
-            course_summaries=getattr(allocation, 'course_summaries', {}),
+            student_allocations=student_allocations,  # Now it's a proper List[StudentAllocation]
+            course_summaries=course_summaries,  # Now it's proper Dict[str, CourseEnrollment]
             issues=getattr(allocation, 'issues', [])
         )
         
@@ -461,7 +486,7 @@ async def download_allocation(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating report: {e}")
+        logger.error(f"Error generating report: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error generating report: {str(e)}"

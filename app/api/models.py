@@ -141,18 +141,29 @@ class AllocationRequest(BaseModel):
 class StudentAllocation(BaseModel):
     student_id: str
     name: str
-    allocations: Dict[str, Optional[str]] = Field(default_factory=dict)
+    allocations: Dict[str, str] = Field(default_factory=dict)
     issues: List[str] = Field(default_factory=list)
+    
+    @validator("allocations", pre=True, always=True)
+    def clean_allocations(cls, v):
+        """Ensure no None or empty values in allocations"""
+        if not isinstance(v, dict):
+            return {}
+        
+        # Filter out None, empty strings, and whitespace-only strings
+        return {
+            category: course_id.strip() 
+            for category, course_id in v.items() 
+            if course_id is not None and str(course_id).strip()
+        }
 
 
 class CourseEnrollment(BaseModel):
     course_id: str
-    name: str = Field(default="Unknown Course")
-    capacity: int = Field(default=60, ge=0)
-    min_enrollment: int = Field(default=20, ge=0)
-    enrolled: int = Field(default=0, ge=0)
+    name: str = ""
+    min_enrollment: int = 20
+    enrolled: int = 0
     students: List[str] = Field(default_factory=list)
-    waitlist: List[str] = Field(default_factory=list)
 
     @validator("enrolled")
     def validate_enrollment(cls, v, values):
