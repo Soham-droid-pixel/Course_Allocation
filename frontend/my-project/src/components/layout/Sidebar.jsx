@@ -14,7 +14,8 @@ function Sidebar() {
   const adminLinks = [
     { to: '/admin/dashboard', label: 'Dashboard' },
     { to: '/admin/reports', label: 'Reports' },
-    { to: '/admin/analytics', label: 'Analytics' }
+    { to: '/admin/analytics', label: 'Preferences Analysis' },
+    { to: '/admin/preferences-analysis', label: 'Post-Allocation Analysis' }
   ]
 
   const links = isAdmin ? adminLinks : studentLinks
@@ -42,4 +43,4 @@ function Sidebar() {
   )
 }
 
-export default Sidebar;
+export default Sidebar

@@ -8,6 +8,7 @@ import StudentStatus from './pages/student/Status'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminReports from './pages/admin/Reports'
 import AdminAnalytics from './pages/admin/Analytics'
+import PreferencesAnalysis from './pages/admin/PreferencesAnalysis'
 import { getUser } from './services/auth'
 import PreferenceConfirmation from './pages/student/PreferenceConfirmation'
 
@@ -82,6 +83,11 @@ function App() {
           <Route path="admin/analytics" element={
             <PrivateRoute allowedRoles={['admin']}>
               <AdminAnalytics />
+            </PrivateRoute>
+          } />
+          <Route path="admin/preferences-analysis" element={
+            <PrivateRoute allowedRoles={['admin']}>
+              <PreferencesAnalysis />
             </PrivateRoute>
           } />
 

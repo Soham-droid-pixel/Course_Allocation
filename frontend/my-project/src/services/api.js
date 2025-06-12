@@ -157,35 +157,13 @@ export const getPreferenceSummary = async () => {
 };
 
 export const getLatestAllocation = async () => {
-    try {
-        // First try to get latest allocation ID from stats
-        const statsResponse = await api.get('/stats');
-        if (!statsResponse.data.completedAllocations) {
-            throw new Error('No completed allocations available');
-        }
-
-        // Then get the specific allocation details
-        const response = await api.get('/allocations/latest');
-        const data = response.data;
-
-        if (!data || !data.allocation_id) {
-            throw new Error('Invalid allocation data received');
-        }
-
-        // Return normalized data
-        return {
-            allocation_id: data.allocation_id,
-            status: data.status || 'unknown',
-            created_at: data.created_at || new Date().toISOString(),
-            _id: data._id // Include MongoDB ID for reference
-        };
-    } catch (error) {
-        console.error('Error fetching latest allocation:', error);
-        if (error.response?.status === 404) {
-            throw new Error('No allocations found');
-        }
-        throw new Error(error.message || 'Failed to fetch latest allocation');
-    }
+  try {
+    const response = await api.get('/allocations/latest');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching latest allocation:', error);
+    throw new Error(error.response?.data?.detail || 'Failed to fetch latest allocation');
+  }
 };
 
 export const getStudentAllocationStatus = async (studentId) => {
@@ -198,5 +176,15 @@ export const getStudentAllocationStatus = async (studentId) => {
       throw new Error('Student not found');
     }
     throw new Error(error.response?.data?.detail || 'Failed to fetch allocation status');
+  }
+};
+
+export const getPreferencesAnalysis = async () => {
+  try {
+    const response = await api.get('/admin/preferences-analysis');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching preferences analysis:', error);
+    throw new Error(error.response?.data?.detail || 'Failed to fetch preferences analysis');
   }
 };

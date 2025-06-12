@@ -707,6 +707,150 @@ async def get_preference_summary():
         logger.error(f"Error generating summary: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
+@router.get("/admin/preferences-analysis")
+async def get_preferences_analysis():
+    """Get detailed analysis of student preferences before allocation"""
+    try:
+        logger.info("Fetching preferences analysis for admin")
+        
+        # Get all confirmed preferences
+        confirmed_preferences = await StudentPreferenceDB.find(
+            {"status": "confirmed"}
+        ).to_list()
+        
+        # Get all preferences (including drafts) for comparison
+        all_preferences = await StudentPreferenceDB.find_all().to_list()
+        
+        # Initialize analysis structure
+        analysis = {
+            "summary": {
+                "total_students": len(all_preferences),
+                "confirmed_students": len(confirmed_preferences),
+                "draft_students": len([p for p in all_preferences if p.status == "draft"]),
+                "completion_rate": (len(confirmed_preferences) / len(all_preferences) * 100) if all_preferences else 0
+            },
+            "course_demand": {},
+            "category_analysis": {},
+            "student_details": []
+        }
+        
+        # Define course categories
+        categories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM', 'Honors', 'Minor']
+        
+        # Initialize course demand tracking
+        for category in categories:
+            analysis["course_demand"][category] = {}
+            analysis["category_analysis"][category] = {
+                "total_first_choices": 0,
+                "total_second_choices": 0,
+                "students_submitted": 0,
+                "most_popular_first": None,
+                "most_popular_second": None,
+                "courses_with_demand": 0
+            }
+        
+        # Process each confirmed student's preferences
+        for pref in confirmed_preferences:
+            student_detail = {
+                "student_id": pref.student_id,
+                "name": pref.name,
+                "status": pref.status,
+                "preferences": {},
+                "total_preferences": 0
+            }
+            
+            for category in categories:
+                category_prefs = pref.preferences.get(category, {})
+                choice1 = str(category_prefs.get("choice1", "")).strip()
+                choice2 = str(category_prefs.get("choice2", "")).strip()
+                
+                # Track course demand
+                if category not in analysis["course_demand"]:
+                    analysis["course_demand"][category] = {}
+                
+                # Count first choices
+                if choice1:
+                    if choice1 not in analysis["course_demand"][category]:
+                        analysis["course_demand"][category][choice1] = {
+                            "course_name": get_course_name(choice1),
+                            "first_choice_count": 0,
+                            "second_choice_count": 0,
+                            "total_demand": 0,
+                            "students_first_choice": [],
+                            "students_second_choice": []
+                        }
+                    analysis["course_demand"][category][choice1]["first_choice_count"] += 1
+                    analysis["course_demand"][category][choice1]["total_demand"] += 1
+                    analysis["course_demand"][category][choice1]["students_first_choice"].append({
+                        "student_id": pref.student_id,
+                        "name": pref.name
+                    })
+                    analysis["category_analysis"][category]["total_first_choices"] += 1
+                
+                # Count second choices
+                if choice2:
+                    if choice2 not in analysis["course_demand"][category]:
+                        analysis["course_demand"][category][choice2] = {
+                            "course_name": get_course_name(choice2),
+                            "first_choice_count": 0,
+                            "second_choice_count": 0,
+                            "total_demand": 0,
+                            "students_first_choice": [],
+                            "students_second_choice": []
+                        }
+                    analysis["course_demand"][category][choice2]["second_choice_count"] += 1
+                    analysis["course_demand"][category][choice2]["total_demand"] += 1
+                    analysis["course_demand"][category][choice2]["students_second_choice"].append({
+                        "student_id": pref.student_id,
+                        "name": pref.name
+                    })
+                    analysis["category_analysis"][category]["total_second_choices"] += 1
+                
+                # Student detail
+                student_detail["preferences"][category] = {
+                    "choice1": {"id": choice1, "name": get_course_name(choice1) if choice1 else ""},
+                    "choice2": {"id": choice2, "name": get_course_name(choice2) if choice2 else ""}
+                }
+                
+                if choice1 or choice2:
+                    student_detail["total_preferences"] += 1
+                    analysis["category_analysis"][category]["students_submitted"] += 1
+            
+            analysis["student_details"].append(student_detail)
+        
+        # Calculate category analysis statistics
+        for category in categories:
+            if category in analysis["course_demand"]:
+                courses = analysis["course_demand"][category]
+                analysis["category_analysis"][category]["courses_with_demand"] = len(courses)
+                
+                # Find most popular courses
+                if courses:
+                    # Most popular first choice
+                    most_popular_first = max(courses.items(), key=lambda x: x[1]["first_choice_count"], default=(None, None))
+                    if most_popular_first[0]:
+                        analysis["category_analysis"][category]["most_popular_first"] = {
+                            "course_id": most_popular_first[0],
+                            "course_name": most_popular_first[1]["course_name"],
+                            "count": most_popular_first[1]["first_choice_count"]
+                        }
+                    
+                    # Most popular second choice
+                    most_popular_second = max(courses.items(), key=lambda x: x[1]["second_choice_count"], default=(None, None))
+                    if most_popular_second[0]:
+                        analysis["category_analysis"][category]["most_popular_second"] = {
+                            "course_id": most_popular_second[0],
+                            "course_name": most_popular_second[1]["course_name"],
+                            "count": most_popular_second[1]["second_choice_count"]
+                        }
+        
+        logger.info(f"Generated preferences analysis for {len(confirmed_preferences)} confirmed students")
+        return analysis
+        
+    except Exception as e:
+        logger.error(f"Error generating preferences analysis: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @router.get("/debug/preferences")
 async def debug_preferences():
     preferences = await get_all_preferences()  # Your existing function
