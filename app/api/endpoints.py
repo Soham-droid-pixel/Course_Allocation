@@ -873,3 +873,152 @@ async def get_latest_allocation_minimal():
     except Exception as e:
         logger.error(f"Minimal latest error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/student/{student_id}/status")
+async def get_student_allocation_status(student_id: str):
+    """Get allocation status for a specific student with preference numbers"""
+    try:
+        logger.info(f"Fetching allocation status for student {student_id}")
+        
+        # First check if student has submitted preferences
+        student_pref = await StudentPreferenceDB.find_one({"student_id": student_id})
+        
+        if not student_pref:
+            return {
+                "student_id": student_id,
+                "status": "no_preferences",
+                "message": "No preferences submitted yet",
+                "allocations": {},
+                "submission_status": None
+            }
+        
+        # Get the latest allocation result
+        latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
+        
+        if not latest_allocation:
+            return {
+                "student_id": student_id,
+                "status": "no_allocation_run",
+                "message": "No allocation has been run yet",
+                "allocations": {},
+                "submission_status": student_pref.status,
+                "preferences_confirmed": student_pref.status == "confirmed"
+            }
+        
+        # Check if student is in the allocation results
+        student_allocations = latest_allocation.student_allocations.get(student_id, {})
+        
+        if not student_allocations:
+            return {
+                "student_id": student_id,
+                "status": "not_allocated",
+                "message": "Not included in latest allocation (preferences may not be confirmed)",
+                "allocations": {},
+                "submission_status": student_pref.status,
+                "preferences_confirmed": student_pref.status == "confirmed",
+                "allocation_id": latest_allocation.allocation_id
+            }
+        
+        # Student has allocations - format them with course names and preference numbers
+        formatted_allocations = {}
+        for category, allocated_course_id in student_allocations.items():
+            course_name = get_course_name(allocated_course_id)
+            
+            # Determine which preference was allocated
+            preference_number = None
+            if category in student_pref.preferences:
+                category_prefs = student_pref.preferences[category]
+                choice1 = str(category_prefs.get("choice1", "")).strip()
+                choice2 = str(category_prefs.get("choice2", "")).strip()
+                
+                if allocated_course_id == choice1:
+                    preference_number = "1st Choice"
+                elif allocated_course_id == choice2:
+                    preference_number = "2nd Choice"
+                else:
+                    preference_number = "Alternative" # Emergency allocation
+            
+            formatted_allocations[category] = {
+                "course_id": allocated_course_id,
+                "course_name": course_name,
+                "status": "allocated",
+                "preference_number": preference_number,
+                "original_preferences": {
+                    "choice1": {
+                        "id": student_pref.preferences.get(category, {}).get("choice1", ""),
+                        "name": get_course_name(student_pref.preferences.get(category, {}).get("choice1", ""))
+                    },
+                    "choice2": {
+                        "id": student_pref.preferences.get(category, {}).get("choice2", ""),
+                        "name": get_course_name(student_pref.preferences.get(category, {}).get("choice2", ""))
+                    }
+                }
+            }
+        
+        return {
+            "student_id": student_id,
+            "status": "allocated",
+            "message": f"Successfully allocated to {len(student_allocations)} courses",
+            "allocations": formatted_allocations,
+            "submission_status": student_pref.status,
+            "preferences_confirmed": student_pref.status == "confirmed",
+            "allocation_id": latest_allocation.allocation_id,
+            "allocation_date": latest_allocation.created_at
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching student status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def get_course_name(course_id: str) -> str:
+    """Get readable course names - move this to a shared utility if needed"""
+    course_names = {
+        # PECL1 courses
+        '25PECL13CE11': 'Image Processing Lab',
+        '25PECL13CE12': 'Natural Language Processing Lab',
+        '25PECL13CE13': 'IIOT Lab',
+        '25PECL13CE14': 'Innovative Product Development Lab-Phase1',
+        '25PECL13CE15': 'Open-Source Intelligence Lab',
+        
+        # PECL2 courses  
+        '25PECL13CE21': 'Social Media Analytics Lab',
+        '25PECL13CE22': 'Ethical Hacking Lab',
+        '25PECL13CE23': 'DevOps Lab',
+        '25PECL13CE24': 'Innovative Product Development Lab-Phase2',
+        '25PECL13CE25': 'Explainable AI Lab',
+        '25PECL13CE26': 'Software Testing Lab',
+        
+        # Program Electives
+        '25PEC13CE11': 'Blockchain Technology',
+        '25PEC13CE12': 'Deep Learning and Reinforcement Learning',
+        '25PEC13CE13': 'Cyber Security',
+        '25PEC13CE14': 'Big Data Analytics',
+        '25PEC13CE15': 'Computer Graphics',
+        '25PEC13CE16': 'HMI',
+        '25PEC13CE17': 'Geographical Information Systems',
+        
+        # Open Electives
+        'OE1': 'Advanced Microprocessor',
+        'OE2': 'Internet of Things',
+        'OE3': 'E-Vehicle',
+        'OE4': 'Supply Chain Management',
+        'OE5': 'Design of Experiments',
+        'OE6': '3D Printing',
+        
+        # Honors
+        'H1': 'IoT Honors',
+        'H2': 'AI/ML Honors', 
+        'H3': 'Data Science Honors',
+        'H4': 'Blockchain Honors',
+        'H5': 'Cybersecurity Honors',
+        
+        # Minor
+        'M1': 'Robotics Minor',
+        'M2': '3D Printing Minor',
+        
+        # MDM
+        'MDM1': 'Emotional and Spiritual Intelligence',
+        'MDM2': 'Health, Wellness and Psychology'
+    }
+    
+    return course_names.get(course_id, course_id)

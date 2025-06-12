@@ -187,3 +187,16 @@ export const getLatestAllocation = async () => {
         throw new Error(error.message || 'Failed to fetch latest allocation');
     }
 };
+
+export const getStudentAllocationStatus = async (studentId) => {
+  try {
+    const response = await api.get(`/student/${studentId}/status`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching student status:', error);
+    if (error.response?.status === 404) {
+      throw new Error('Student not found');
+    }
+    throw new Error(error.response?.data?.detail || 'Failed to fetch allocation status');
+  }
+};
