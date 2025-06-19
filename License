@@ -1,0 +1,101 @@
+MIT License
+
+Copyright (c) 2024 Fr. Conceicao Rodrigues College of Engineering - Elective Course Management System
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+🎓 EDUCATIONAL USE NOTICE
+
+This software was developed as part of an academic project at Fr. Conceicao 
+Rodrigues College of Engineering for educational purposes. The system is 
+designed to facilitate course selection and allocation processes for 
+engineering students.
+
+🏫 INSTITUTIONAL INFORMATION
+Institution: Fr. Conceicao Rodrigues College of Engineering
+Location: Bandra West, Mumbai, Maharashtra, India
+Website: https://frcrce.ac.in
+Academic Year: 2024-2025
+
+📚 PROJECT DETAILS
+Project Title: Elective Course Management System
+Course: Computer Engineering
+Purpose: Student Course Selection & Administrative Management
+Technology Stack: React, FastAPI, MongoDB, Python
+
+👨‍🎓 STUDENT DEVELOPER INFORMATION
+Developer:Soham Kalgutkar
+Roll Number:10192
+Class:Second Year Computer Engineering-A
+Academic Year: 2024-2025
+Supervisor:Prof.Roshni Padate
+
+🎯 SYSTEM FEATURES
+- Student Course Selection Portal
+- Administrative Dashboard
+- Automated Course Allocation Algorithm
+- Real-time Analytics and Reporting
+- Secure Authentication System
+- Comprehensive Testing Suite
+
+⚖️ USAGE TERMS
+1. This software is provided for educational and institutional use
+2. Commercial use requires explicit permission from the copyright holders
+3. Modifications and improvements are encouraged for educational purposes
+4. Redistribution should maintain this license and attribution
+5. The institution reserves the right to use this system for academic purposes
+
+🛡️ DISCLAIMER
+This software is provided "as is" without warranty of any kind. The developers
+and Fr. Conceicao Rodrigues College of Engineering are not liable for any
+damages arising from the use of this software.
+
+🤝 CONTRIBUTION GUIDELINES
+Contributions to this project are welcome under the following conditions:
+- All contributions must maintain educational value
+- Code quality and documentation standards must be met
+- Compatibility with existing system architecture
+- Testing requirements must be satisfied
+- Proper attribution must be maintained
+
+📧 CONTACT INFORMATION
+For questions regarding this license or the software:
+- Institution Email: principal@frcrce.ac.in
+- Technical Support: support@frcrce.ac.in
+- Phone: +91 22 2640 4971
+
+================================================================================
+
+🌟 ACKNOWLEDGMENTS
+
+Special thanks to:
+- Faculty members for guidance and requirements
+- Students for testing and feedback
+- Open source community for tools and libraries
+- MongoDB, React, FastAPI communities for excellent documentation
+
+This project represents the collaborative effort of students and faculty at
+Fr. Conceicao Rodrigues College of Engineering to create practical solutions
+for educational administration.
+
+🎓 Empowering Education Through Technology 🎓
+
+================================================================================
