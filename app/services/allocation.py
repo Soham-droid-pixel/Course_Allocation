@@ -3,15 +3,21 @@ from datetime import datetime
 import logging
 import uuid
 from collections import defaultdict
+import sys
+from pathlib import Path
 
-from ..api.models import (
+app_dir = Path(__file__).parent.parent
+if str(app_dir) not in sys.path:
+    sys.path.insert(0, str(app_dir))
+
+from api.models import (
     StudentPreference, 
     AllocationResponse, 
     StudentAllocation, 
     CourseEnrollment,
     CourseCategory
 )
-from ..core.exceptions import CourseAllocationException
+from core.exceptions import CourseAllocationException
 
 logger = logging.getLogger("course_allocation_service")
 
@@ -282,7 +288,7 @@ def allocate_optional_courses(
             if honors_choice1 not in course_enrollments:
                 course_enrollments[honors_choice1] = CourseEnrollment(
                     course_id=honors_choice1,
-                    min_enrollment=0,  # NO minimum enrollment for Honors
+                    min_enrollment=0,  # NO minimum enrollment
                     enrolled=0,
                     students=[]
                 )

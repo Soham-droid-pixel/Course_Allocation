@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
-import { triggerAllocation, downloadReport } from '../../services/api'
+import { triggerAllocation, downloadReport, getStats } from '../../services/api'
 
 function AdminDashboard() {
   const [stats, setStats] = useState({
@@ -16,11 +16,7 @@ function AdminDashboard() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/stats')
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      const data = await response.json()
+      const data = await getStats()
       setStats(data)
     } catch (error) {
       console.error('Stats fetch error:', error)

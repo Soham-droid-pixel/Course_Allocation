@@ -2,7 +2,16 @@ from beanie import Document
 from typing import Dict, List, Optional, Annotated
 from datetime import datetime
 from pydantic import Field, validator
-from ..api.models import CourseCategory, CourseChoice
+import sys
+from pathlib import Path
+
+# Fix import path
+app_dir = Path(__file__).parent.parent
+if str(app_dir) not in sys.path:
+    sys.path.insert(0, str(app_dir))
+
+# Import with absolute path
+from api.models import CourseCategory, CourseChoice
 
 
 class StudentPreference(Document):
@@ -55,27 +64,6 @@ class StudentPreference(Document):
                 return datetime.utcnow()
         return v
 
-    def convert_preferences(self) -> Dict[str, CourseChoice]:
-        """Convert raw preferences to CourseChoice objects"""
-        converted = {}
-        for category, choices in self.preferences.items():
-            if isinstance(choices, dict):
-                converted[category] = CourseChoice(
-                    choice1=choices.get('choice1', ''),
-                    choice2=choices.get('choice2', '')
-                )
-        return converted
-
-    @property
-    def is_confirmed(self) -> bool:
-        return self.status == "confirmed"
-
-    class Settings:
-        name = "student_preferences"
-        indexes = [
-            [("created_at", -1)],
-            [("enrollment_status", 1)]
-        ]
     @validator("status", pre=True, always=True)
     def validate_status_with_mdm(cls, v, values):
         """Ensure confirmed students have MDM choice"""
@@ -102,6 +90,28 @@ class StudentPreference(Document):
                 raise ValueError(f"MDM validation failed: {str(e)}")
             
         return v
+
+    def convert_preferences(self) -> Dict[str, CourseChoice]:
+        """Convert raw preferences to CourseChoice objects"""
+        converted = {}
+        for category, choices in self.preferences.items():
+            if isinstance(choices, dict):
+                converted[category] = CourseChoice(
+                    choice1=choices.get('choice1', ''),
+                    choice2=choices.get('choice2', '')
+                )
+        return converted
+
+    @property
+    def is_confirmed(self) -> bool:
+        return self.status == "confirmed"
+
+    class Settings:
+        name = "student_preferences"
+        indexes = [
+            [("created_at", -1)],
+            [("enrollment_status", 1)]
+        ]
 
 
 class AllocationResult(Document):

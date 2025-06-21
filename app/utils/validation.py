@@ -1,7 +1,13 @@
+import sys
+from pathlib import Path
+app_dir = Path(__file__).parent.parent
+if str(app_dir) not in sys.path:
+    sys.path.insert(0, str(app_dir))
+
 import logging
 from typing import List
-from ..api.models import StudentPreference
-from ..core.exceptions import CourseAllocationException
+from api.models import StudentPreference
+from core.exceptions import CourseAllocationException
 
 logger = logging.getLogger("course_allocation_service")
 

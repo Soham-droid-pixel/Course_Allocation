@@ -20,6 +20,14 @@ class PreferenceStatus(str, Enum):
     CONFIRMED = "confirmed"
 
 
+class DownloadFormat(str, Enum):
+    EXCEL = "excel"
+    CSV = "csv"
+    # Add attribute-style access for backward compatibility
+    excel = "excel"
+    csv = "csv"
+
+
 class CourseChoice(BaseModel):
     choice1: str = Field(default="")
     choice2: str = Field(default="")
@@ -177,11 +185,6 @@ class AllocationResponse(BaseModel):
     student_allocations: List[StudentAllocation] = Field(default_factory=list)
     course_summaries: Dict[str, CourseEnrollment] = Field(default_factory=dict)
     issues: List[str] = Field(default_factory=list)
-
-
-class DownloadFormat(str, Enum):
-    EXCEL = "excel"
-    CSV = "csv"
 
 
 class PreferenceResponse(BaseModel):

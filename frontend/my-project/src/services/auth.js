@@ -25,12 +25,25 @@ export const login = async (credentials) => {
   throw new Error('Invalid credentials')
 }
 
+// Legacy auth functions for backward compatibility
+// This file can be removed once all components are updated
+
 export const getUser = () => {
-  const user = localStorage.getItem('user')
-  return user ? JSON.parse(user) : null
+  try {
+    const user = localStorage.getItem('user')
+    return user ? JSON.parse(user) : null
+  } catch (error) {
+    console.error('Error parsing user from localStorage:', error)
+    return null
+  }
+}
+
+export const isAuthenticated = () => {
+  return !!localStorage.getItem('token')
 }
 
 export const logout = () => {
+  localStorage.removeItem('token')
   localStorage.removeItem('user')
   window.location.href = '/login'
 }

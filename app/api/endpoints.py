@@ -1,11 +1,18 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status, Depends
 from fastapi.responses import FileResponse, JSONResponse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import uuid
 import os
 import asyncio
 from datetime import datetime
 import logging
+import sys
+from pathlib import Path
+
+# Fix the import path issue
+app_dir = Path(__file__).parent.parent
+if str(app_dir) not in sys.path:
+    sys.path.insert(0, str(app_dir))
 
 async def cleanup_temp_file(file_path: str):
     try:
@@ -15,32 +22,122 @@ async def cleanup_temp_file(file_path: str):
     except Exception as e:
         logger.error(f"Error cleaning up temp file {file_path}: {e}")
 
-from .models import (
+# Import models
+from api.models import (
     StudentPreference, 
     AllocationRequest, 
     AllocationResponse, 
-    StudentAllocation,    # Added
-    CourseEnrollment,     # Added
+    StudentAllocation,
+    CourseEnrollment,
     DownloadFormat, 
     CourseCategory,
     PreferenceResponse,
     CourseChoice,
     PreferenceConfirmation
 )
-from ..db.models import StudentPreference as StudentPreferenceDB, AllocationResult
-from ..core.exceptions import CourseAllocationException
-from ..services.allocation import allocate_courses
-from ..services.report import generate_allocation_report, DownloadFormat
-from ..utils.validation import validate_mdm_selection
 
+# Import your existing components with graceful fallbacks
+try:
+    from db.models import StudentPreference as StudentPreferenceDB, AllocationResult
+    print("✅ Successfully imported DB models")
+    DB_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ DB models import error: {e}")
+    StudentPreferenceDB = None
+    AllocationResult = None
+    DB_AVAILABLE = False
+
+try:
+    from core.exceptions import CourseAllocationException
+    print("✅ Successfully imported core exceptions")
+except ImportError as e:
+    print(f"❌ Core exceptions import error: {e}")
+    class CourseAllocationException(Exception):
+        pass
+
+try:
+    from services.allocation import allocate_courses
+    print("✅ Successfully imported allocation service")
+    ALLOCATION_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ Allocation service import error: {e}")
+    ALLOCATION_AVAILABLE = False
+    def allocate_courses(students):
+        raise HTTPException(status_code=503, detail="Allocation service temporarily unavailable")
+
+try:
+    from services.report import generate_allocation_report
+    print("✅ Successfully imported report service")
+    REPORT_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ Report service import error: {e}")
+    REPORT_AVAILABLE = False
+    def generate_allocation_report(*args, **kwargs):
+        raise HTTPException(status_code=503, detail="Report service temporarily unavailable")
+
+try:
+    from utils.validation import validate_mdm_selection
+    print("✅ Successfully imported validation utils")
+    VALIDATION_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ Validation utils import error: {e}")
+    VALIDATION_AVAILABLE = False
+    def validate_mdm_selection(*args, **kwargs):
+        return True
+
+# Add auth dependencies
+try:
+    from api.auth_bridge import get_current_user, get_current_admin, get_current_student
+    from models.user import User
+    print("✅ Successfully imported auth bridge")
+    AUTH_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ Auth bridge import error: {e}")
+    AUTH_AVAILABLE = False
+    def get_current_user():
+        return None
+    def get_current_admin():
+        return None
+    def get_current_student():
+        return None
 
 logger = logging.getLogger("course_allocation_service")
 router = APIRouter()
 
+# Service status endpoint
+@router.get("/status")
+async def get_service_status():
+    """Get the status of all services"""
+    return {
+        "services": {
+            "database": DB_AVAILABLE,
+            "allocation": ALLOCATION_AVAILABLE,
+            "reports": REPORT_AVAILABLE,
+            "validation": VALIDATION_AVAILABLE,
+            "authentication": AUTH_AVAILABLE
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+# Health check endpoint
+@router.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "message": "API endpoints are working",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+# ==================== PREFERENCES ENDPOINTS ====================
+
 @router.post("/preferences/submit", status_code=201)
 async def submit_preferences(request_data: Dict[str, Any]):
+    """Submit student preferences"""
     try:
         logger.info(f"Received preference submission: {request_data}")
+        
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
         # Extract and validate required fields
         student_id = request_data.get("student_id")
@@ -116,499 +213,13 @@ async def submit_preferences(request_data: Dict[str, Any]):
         logger.error(f"Error submitting preferences: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/preferences", response_model=List[PreferenceResponse])
-async def get_all_preferences():
-    try:
-        db_preferences = await StudentPreferenceDB.find_all().to_list()
-        logger.info(f"Retrieved {len(db_preferences)} student preferences")
-        
-        # Convert DB preferences to response format
-        response_preferences = []
-        for pref in db_preferences:
-            try:
-                # Convert raw preferences to CourseChoice objects
-                converted_preferences = {}
-                for category, choices in pref.preferences.items():
-                    if isinstance(choices, dict):
-                        converted_preferences[category] = CourseChoice(
-                            choice1=choices.get('choice1'),
-                            choice2=choices.get('choice2')
-                        )
-                
-                # Create response object
-                response_pref = PreferenceResponse(
-                    student_id=pref.student_id,
-                    name=pref.name if hasattr(pref, 'name') else "Unknown",
-                    preferences=converted_preferences
-                )
-                response_preferences.append(response_pref)
-            except Exception as e:
-                logger.error(f"Error converting preference for student: {str(e)}")
-                continue
-
-        return response_preferences
-
-    except Exception as e:
-        logger.error(f"Error retrieving preferences: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/allocate", response_model=AllocationResponse)
-async def allocate(request: AllocationRequest):
-    """Trigger course allocation for confirmed students"""
-    try:
-        logger.info("Starting course allocation process")
-        
-        # Get only confirmed students
-        confirmed_students = await StudentPreferenceDB.find(
-            {"status": "confirmed"}
-        ).to_list()
-        
-        if not confirmed_students:
-            raise CourseAllocationException("No confirmed student preferences found")
-            
-        logger.info(f"Found {len(confirmed_students)} confirmed students")
-        
-        # Convert to API models
-        api_students = []
-        
-        for student in confirmed_students:
-            try:
-                # Create API model with proper data conversion
-                api_student = StudentPreference(
-                    student_id=student.student_id,
-                    name=student.name,
-                    preferences=student.preferences,  # Already in correct format
-                    status="confirmed"
-                )
-                api_students.append(api_student)
-                
-            except Exception as e:
-                logger.error(f"Error converting student {student.student_id}: {str(e)}")
-                continue
-        
-        if not api_students:
-            raise CourseAllocationException("No valid student preferences after conversion")
-            
-        logger.info(f"Processing {len(api_students)} valid students")
-        
-        # Run allocation
-        allocation_result = allocate_courses(api_students)
-        
-        # Save allocation result with proper data structure
-        db_allocation = AllocationResult(
-            allocation_id=allocation_result.allocation_id,
-            student_allocations={
-                student.student_id: student.allocations 
-                for student in allocation_result.student_allocations
-            },
-            course_enrollments={
-                course_id: course.students 
-                for course_id, course in allocation_result.course_summaries.items()
-            },
-            status="completed",
-            issues=allocation_result.issues
-        )
-        
-        await db_allocation.insert()
-        
-        logger.info(f"Allocation completed successfully. ID: {allocation_result.allocation_id}")
-        
-        # After successful allocation, update student status
-        try:
-            for student in confirmed_students:
-                student.enrollment_status = "allocated"
-                await student.save()
-            
-            logger.info(f"Updated enrollment status for {len(confirmed_students)} students")
-        except Exception as e:
-            logger.warning(f"Failed to update student status: {str(e)}")
-        
-        return allocation_result
-        
-    except CourseAllocationException as e:
-        logger.error(f"Allocation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-@router.get("/stats", response_model=dict)
-async def get_stats():
-    try:
-        # Get total confirmed students (these are the ones that should be allocated)
-        confirmed_students = await StudentPreferenceDB.find({"status": "confirmed"}).count()
-        
-        # Get completed allocations count
-        completed_allocations = await AllocationResult.find({"status": "completed"}).count()
-        
-        # Get latest allocation to count actually allocated students
-        latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
-        
-        allocated_students = 0
-        if latest_allocation and latest_allocation.student_allocations:
-            allocated_students = len(latest_allocation.student_allocations)
-
-        return {
-            "totalSubmissions": confirmed_students,  # Only count confirmed students
-            "pendingAllocations": max(0, confirmed_students - allocated_students),  # Students not yet allocated
-            "completedAllocations": allocated_students  # Actually allocated students
-        }
-    except Exception as e:
-        logger.error(f"Error fetching stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Fix for your endpoints.py file
-
-# Remove the duplicate route and fix the existing ones
-@router.get("/allocations/recent")  # This will be /api/allocations/recent
-async def get_recent_allocation():
-    try:
-        # Get most recent allocation
-        recent = await AllocationResult.find(
-            {"status": "completed"}
-        ).sort([("created_at", -1)]).first()
-        
-        if not recent:
-            logger.info("No completed allocations found")
-            return {
-                "allocation_id": None,
-                "status": "no_allocations",
-                "message": "No completed allocations found"
-            }
-            
-        return {"allocation_id": recent.allocation_id}
-    except Exception as e:
-        logger.error(f"Error fetching recent allocation: {str(e)}")
-        return {
-            "allocation_id": None,
-            "status": "error", 
-            "message": f"Error fetching recent allocation: {str(e)}"
-        }
-
-# Replace your existing get_latest_allocation function with this:
-
-# Replace your existing get_latest_allocation function with this:
-
-# Replace your existing get_latest_allocation function with this working version:
-
-# THE ISSUE: Route order matters in FastAPI!
-# The route /allocations/{allocation_id} is catching /allocations/latest
-# because "latest" is being treated as an allocation_id
-
-# SOLUTION: Put the specific route BEFORE the dynamic route
-
-# Move this route BEFORE @router.get("/allocations/{allocation_id}")
-@router.get("/allocations/latest")
-async def get_latest_allocation():
-    """Get the most recent allocation - MUST BE BEFORE /allocations/{allocation_id}"""
-    try:
-        logger.info("Fetching latest allocation...")
-        
-        latest = await AllocationResult.find_one(sort=[("created_at", -1)])
-        
-        if not latest:
-            logger.info("No allocations found in database")
-            return {
-                "allocation_id": None,
-                "status": "no_allocations",
-                "message": "No allocations found yet. Please run an allocation first.",
-                "created_at": None
-            }
-
-        # Build response with only existing fields
-        response = {
-            "allocation_id": latest.allocation_id,
-            "status": latest.status,
-            "created_at": latest.created_at,
-            "_id": str(latest.id),
-            "student_allocations": getattr(latest, 'student_allocations', {}),
-            "issues": getattr(latest, 'issues', []) or []
-        }
-        
-        # Add course data
-        if hasattr(latest, 'course_enrollments'):
-            response["course_enrollments"] = latest.course_enrollments
-        elif hasattr(latest, 'course_summaries'):
-            response["course_summaries"] = latest.course_summaries
-        else:
-            response["course_enrollments"] = {}
-        
-        logger.info(f"Successfully returning latest allocation: {latest.allocation_id}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error fetching latest allocation: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching latest allocation: {str(e)}"
-        )
-
-# This route should come AFTER the /latest route
-@router.get("/allocations/{allocation_id}")
-async def get_allocation(allocation_id: str):
-    """Get specific allocation by ID - MUST BE AFTER /allocations/latest"""
-    try:
-        logger.info(f"Fetching allocation with ID: {allocation_id}")
-        
-        # Remove the "latest" check since it's handled by the route above
-        # if allocation_id == "latest":
-        #     return await get_latest_allocation()
-            
-        # Try both _id and allocation_id fields
-        allocation = await AllocationResult.find_one({
-            "$or": [
-                {"_id": allocation_id},
-                {"allocation_id": allocation_id}
-            ]
-        })
-        
-        if not allocation:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Allocation {allocation_id} not found"
-            )
-            
-        # Build response with only existing fields
-        response = {
-            "allocation_id": allocation.allocation_id,
-            "status": allocation.status,
-            "created_at": allocation.created_at,
-            "_id": str(allocation.id),
-            "student_allocations": getattr(allocation, 'student_allocations', {}),
-            "issues": getattr(allocation, 'issues', []) or []
-        }
-        
-        # Add course data
-        if hasattr(allocation, 'course_enrollments'):
-            response["course_enrollments"] = allocation.course_enrollments
-        elif hasattr(allocation, 'course_summaries'):
-            response["course_summaries"] = allocation.course_summaries
-        else:
-            response["course_enrollments"] = {}
-        
-        return response
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching allocation {allocation_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error fetching allocation"
-        )
-@router.get("/download/{allocation_id}")
-async def download_allocation(
-    allocation_id: str,
-    background_tasks: BackgroundTasks,
-    format: str = Query("excel", regex="^(excel|csv)$")
-):
-    """Download allocation results"""
-    try:
-        # Try both _id and allocation_id fields
-        allocation = await AllocationResult.find_one({
-            "$or": [
-                {"_id": allocation_id},
-                {"allocation_id": allocation_id}
-            ]
-        })
-        
-        if not allocation:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Allocation {allocation_id} not found"
-            )
-        
-        # Convert database format to API format properly
-        student_allocations = []
-        raw_student_allocations = getattr(allocation, 'student_allocations', {})
-        
-        for student_id, allocations_dict in raw_student_allocations.items():
-            student_allocation = StudentAllocation(
-                student_id=student_id,
-                name=f"Student {student_id}",  # You might want to fetch actual names
-                allocations=allocations_dict,
-                issues=[]  # Add student-specific issues if available
-            )
-            student_allocations.append(student_allocation)
-        
-        # Convert course enrollments to CourseEnrollment objects
-        course_summaries = {}
-        raw_course_enrollments = getattr(allocation, 'course_enrollments', {})
-        
-        for course_id, student_list in raw_course_enrollments.items():
-            course_enrollment = CourseEnrollment(
-                course_id=course_id,
-                name=f"Course {course_id}",  # You might want to fetch actual names
-                capacity=60,  # Default values - you might want to store these
-                min_enrollment=20,
-                enrolled=len(student_list),
-                students=student_list,
-                waitlist=[]
-            )
-            course_summaries[course_id] = course_enrollment
-        
-        # Create proper AllocationResponse
-        allocation_response = AllocationResponse(
-            allocation_id=allocation.allocation_id,
-            student_allocations=student_allocations,  # Now it's a proper List[StudentAllocation]
-            course_summaries=course_summaries,  # Now it's proper Dict[str, CourseEnrollment]
-            issues=getattr(allocation, 'issues', [])
-        )
-        
-        # Create temporary file path
-        temp_dir = "/tmp" if os.path.exists("/tmp") else "."
-        file_extension = "xlsx" if format == "excel" else "csv"
-        temp_filename = f"allocation_report_{allocation_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_extension}"
-        output_path = os.path.join(temp_dir, temp_filename)
-        
-        # Generate report with correct parameters
-        generated_path = generate_allocation_report(
-            allocation=allocation_response,
-            output_path=output_path,
-            format=format
-        )
-        
-        # Schedule cleanup
-        background_tasks.add_task(cleanup_temp_file, generated_path)
-        
-        return FileResponse(
-            path=generated_path,
-            filename=f"allocation_report_{allocation_id}.{file_extension}",
-            media_type=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                if format == "excel"
-                else "text/csv"
-            )
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating report: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating report: {str(e)}"
-        )
-    
-@router.get("/debug/latest-simple")
-async def debug_latest_simple():
-    """Test the exact same logic as get_latest_allocation"""
-    try:
-        latest = await AllocationResult.find_one(sort=[("created_at", -1)])
-        
-        if not latest:
-            return {"message": "No allocation found"}
-            
-        # Test each field access
-        response = {"fields": {}}
-        
-        try:
-            response["fields"]["allocation_id"] = latest.allocation_id
-        except Exception as e:
-            response["fields"]["allocation_id"] = f"Error: {e}"
-            
-        try:
-            response["fields"]["status"] = latest.status
-        except Exception as e:
-            response["fields"]["status"] = f"Error: {e}"
-            
-        try:
-            response["fields"]["created_at"] = latest.created_at
-        except Exception as e:
-            response["fields"]["created_at"] = f"Error: {e}"
-            
-        try:
-            response["fields"]["id"] = str(latest.id)
-        except Exception as e:
-            response["fields"]["id"] = f"Error: {e}"
-            
-        try:
-            response["fields"]["student_allocations"] = latest.student_allocations
-        except Exception as e:
-            response["fields"]["student_allocations"] = f"Error: {e}"
-            
-        try:
-            response["fields"]["course_summaries"] = latest.course_summaries
-        except Exception as e:
-            response["fields"]["course_summaries"] = f"Error: {e}"
-            
-        try:
-            response["fields"]["issues"] = latest.issues
-        except Exception as e:
-            response["fields"]["issues"] = f"Error: {e}"
-        
-        return response
-        
-    except Exception as e:
-        return {"error": str(e), "type": type(e).__name__}
-# Also add a more detailed debug endpoint
-@router.get("/debug/latest-detailed")
-async def debug_latest_detailed():
-    """Detailed debugging for latest allocation"""
-    try:
-        # Test different query methods
-        debug_info = {
-            "methods": {}
-        }
-        
-        # Method 1: find_one with sort
-        try:
-            result1 = await AllocationResult.find_one(sort=[("created_at", -1)])
-            debug_info["methods"]["find_one_with_sort"] = {
-                "success": result1 is not None,
-                "allocation_id": result1.allocation_id if result1 else None,
-                "error": None
-            }
-        except Exception as e:
-            debug_info["methods"]["find_one_with_sort"] = {
-                "success": False,
-                "allocation_id": None,
-                "error": str(e)
-            }
-        
-        # Method 2: find with sort and limit
-        try:
-            result2_list = await AllocationResult.find().sort([("created_at", -1)]).limit(1).to_list()
-            result2 = result2_list[0] if result2_list else None
-            debug_info["methods"]["find_with_sort_limit"] = {
-                "success": result2 is not None,
-                "allocation_id": result2.allocation_id if result2 else None,
-                "error": None
-            }
-        except Exception as e:
-            debug_info["methods"]["find_with_sort_limit"] = {
-                "success": False,
-                "allocation_id": None,
-                "error": str(e)
-            }
-        
-        # Method 3: find_all and sort in Python
-        try:
-            all_results = await AllocationResult.find_all().to_list()
-            result3 = max(all_results, key=lambda x: x.created_at) if all_results else None
-            debug_info["methods"]["find_all_python_sort"] = {
-                "success": result3 is not None,
-                "allocation_id": result3.allocation_id if result3 else None,
-                "total_count": len(all_results),
-                "error": None
-            }
-        except Exception as e:
-            debug_info["methods"]["find_all_python_sort"] = {
-                "success": False,
-                "allocation_id": None,
-                "error": str(e)
-            }
-        
-        return debug_info
-        
-    except Exception as e:
-        return {"error": str(e)}
-# Fix the get_allocation function
 @router.post("/preferences/{student_id}/confirm")
 async def confirm_preferences(student_id: str, request_data: Dict[str, Any]):
+    """Confirm student preferences"""
     try:
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
         logger.info(f"Confirming preferences for student {student_id}")
         
         # Process preferences
@@ -666,456 +277,443 @@ async def confirm_preferences(student_id: str, request_data: Dict[str, Any]):
         logger.error(f"Error confirming preferences: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/admin/summary")
-async def get_preference_summary():
+@router.get("/preferences/{student_id}")
+async def get_student_preferences(student_id: str):
+    """Get preferences for a specific student"""
     try:
-        # Get all confirmed preferences
-        preferences = await StudentPreferenceDB.find(
-            {"status": "confirmed"}
-        ).to_list()
-
-        # Initialize summary
-        summary = {
-            "total_submissions": len(preferences),
-            "course_selections": {},
-            "status_counts": {
-                "draft": 0,
-                "submitted": 0,
-                "confirmed": 0
-            }
-        }
-
-        # Count status distribution
-        all_preferences = await StudentPreferenceDB.find_all().to_list()
-        for pref in all_preferences:
-            summary["status_counts"][pref.status] += 1
-
-        # Count course selections
-        for pref in preferences:
-            for category, choices in pref.preferences.items():
-                if category not in summary["course_selections"]:
-                    summary["course_selections"][category] = {}
-                
-                for choice_num, course in choices.items():
-                    if course not in summary["course_selections"][category]:
-                        summary["course_selections"][category][course] = 0
-                    summary["course_selections"][category][course] += 1
-
-        return summary
-
-    except Exception as e:
-        logger.error(f"Error generating summary: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@router.get("/admin/preferences-analysis")
-async def get_preferences_analysis():
-    """Get detailed analysis of student preferences before allocation"""
-    try:
-        logger.info("Fetching preferences analysis for admin")
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
-        # Get all confirmed preferences
-        confirmed_preferences = await StudentPreferenceDB.find(
-            {"status": "confirmed"}
-        ).to_list()
+        preference = await StudentPreferenceDB.find_one({"student_id": student_id})
+        if not preference:
+            raise HTTPException(status_code=404, detail="Preferences not found")
         
-        # Get all preferences (including drafts) for comparison
-        all_preferences = await StudentPreferenceDB.find_all().to_list()
-        
-        # Initialize analysis structure
-        analysis = {
-            "summary": {
-                "total_students": len(all_preferences),
-                "confirmed_students": len(confirmed_preferences),
-                "draft_students": len([p for p in all_preferences if p.status == "draft"]),
-                "completion_rate": (len(confirmed_preferences) / len(all_preferences) * 100) if all_preferences else 0
-            },
-            "course_demand": {},
-            "category_analysis": {},
-            "student_details": []
-        }
-        
-        # Define course categories
-        categories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM', 'Honors', 'Minor']
-        
-        # Initialize course demand tracking
-        for category in categories:
-            analysis["course_demand"][category] = {}
-            analysis["category_analysis"][category] = {
-                "total_first_choices": 0,
-                "total_second_choices": 0,
-                "students_submitted": 0,
-                "most_popular_first": None,
-                "most_popular_second": None,
-                "courses_with_demand": 0
-            }
-        
-        # Process each confirmed student's preferences
-        for pref in confirmed_preferences:
-            student_detail = {
-                "student_id": pref.student_id,
-                "name": pref.name,
-                "status": pref.status,
-                "preferences": {},
-                "total_preferences": 0
-            }
-            
-            for category in categories:
-                category_prefs = pref.preferences.get(category, {})
-                choice1 = str(category_prefs.get("choice1", "")).strip()
-                choice2 = str(category_prefs.get("choice2", "")).strip()
-                
-                # Track course demand
-                if category not in analysis["course_demand"]:
-                    analysis["course_demand"][category] = {}
-                
-                # Count first choices
-                if choice1:
-                    if choice1 not in analysis["course_demand"][category]:
-                        analysis["course_demand"][category][choice1] = {
-                            "course_name": get_course_name(choice1),
-                            "first_choice_count": 0,
-                            "second_choice_count": 0,
-                            "total_demand": 0,
-                            "students_first_choice": [],
-                            "students_second_choice": []
-                        }
-                    analysis["course_demand"][category][choice1]["first_choice_count"] += 1
-                    analysis["course_demand"][category][choice1]["total_demand"] += 1
-                    analysis["course_demand"][category][choice1]["students_first_choice"].append({
-                        "student_id": pref.student_id,
-                        "name": pref.name
-                    })
-                    analysis["category_analysis"][category]["total_first_choices"] += 1
-                
-                # Count second choices
-                if choice2:
-                    if choice2 not in analysis["course_demand"][category]:
-                        analysis["course_demand"][category][choice2] = {
-                            "course_name": get_course_name(choice2),
-                            "first_choice_count": 0,
-                            "second_choice_count": 0,
-                            "total_demand": 0,
-                            "students_first_choice": [],
-                            "students_second_choice": []
-                        }
-                    analysis["course_demand"][category][choice2]["second_choice_count"] += 1
-                    analysis["course_demand"][category][choice2]["total_demand"] += 1
-                    analysis["course_demand"][category][choice2]["students_second_choice"].append({
-                        "student_id": pref.student_id,
-                        "name": pref.name
-                    })
-                    analysis["category_analysis"][category]["total_second_choices"] += 1
-                
-                # Student detail
-                student_detail["preferences"][category] = {
-                    "choice1": {"id": choice1, "name": get_course_name(choice1) if choice1 else ""},
-                    "choice2": {"id": choice2, "name": get_course_name(choice2) if choice2 else ""}
-                }
-                
-                if choice1 or choice2:
-                    student_detail["total_preferences"] += 1
-                    analysis["category_analysis"][category]["students_submitted"] += 1
-            
-            analysis["student_details"].append(student_detail)
-        
-        # Calculate category analysis statistics
-        for category in categories:
-            if category in analysis["course_demand"]:
-                courses = analysis["course_demand"][category]
-                analysis["category_analysis"][category]["courses_with_demand"] = len(courses)
-                
-                # Find most popular courses
-                if courses:
-                    # Most popular first choice
-                    most_popular_first = max(courses.items(), key=lambda x: x[1]["first_choice_count"], default=(None, None))
-                    if most_popular_first[0]:
-                        analysis["category_analysis"][category]["most_popular_first"] = {
-                            "course_id": most_popular_first[0],
-                            "course_name": most_popular_first[1]["course_name"],
-                            "count": most_popular_first[1]["first_choice_count"]
-                        }
-                    
-                    # Most popular second choice
-                    most_popular_second = max(courses.items(), key=lambda x: x[1]["second_choice_count"], default=(None, None))
-                    if most_popular_second[0]:
-                        analysis["category_analysis"][category]["most_popular_second"] = {
-                            "course_id": most_popular_second[0],
-                            "course_name": most_popular_second[1]["course_name"],
-                            "count": most_popular_second[1]["second_choice_count"]
-                        }
-        
-        logger.info(f"Generated preferences analysis for {len(confirmed_preferences)} confirmed students")
-        return analysis
-        
-    except Exception as e:
-        logger.error(f"Error generating preferences analysis: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@router.get("/debug/preferences")
-async def debug_preferences():
-    preferences = await get_all_preferences()  # Your existing function
-    return {
-        "count": len(preferences),
-        "data": [pref.dict() if hasattr(pref, 'dict') else pref for pref in preferences]
-    }
-
-# Add this temporary debug endpoint
-@router.get("/debug/allocations")
-async def debug_allocations():
-    try:
-        count = await AllocationResult.find_all().count()
-        all_allocations = await AllocationResult.find_all().to_list()
         return {
-            "count": count,
-            "allocations": [
-                {
-                    "id": str(alloc.id),
-                    "allocation_id": getattr(alloc, 'allocation_id', None),
-                    "status": getattr(alloc, 'status', None),
-                    "created_at": getattr(alloc, 'created_at', None)
-                } for alloc in all_allocations
-            ]
+            "student_id": preference.student_id,
+            "name": preference.name,
+            "preferences": preference.preferences,
+            "status": preference.status,
+            "comments": preference.comments,
+            "created_at": preference.created_at,
+            "updated_at": preference.updated_at
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
-# Add this debug endpoint to identify the exact error
-@router.get("/debug/latest-step-by-step")
-async def debug_latest_step_by_step():
-    """Debug each step of the latest allocation process"""
-    debug_steps = {}
-    
-    try:
-        # Step 1: Log the start
-        debug_steps["step1_start"] = "✅ Function started"
-        logger.info("Debug: Starting latest allocation fetch")
-        
-        # Step 2: Try the database query
-        try:
-            latest = await AllocationResult.find_one(sort=[("created_at", -1)])
-            debug_steps["step2_query"] = "✅ Database query successful"
-            debug_steps["step2_found"] = latest is not None
-        except Exception as e:
-            debug_steps["step2_query"] = f"❌ Database query failed: {str(e)}"
-            return debug_steps
-        
-        # Step 3: Check if allocation exists
-        if not latest:
-            debug_steps["step3_check"] = "❌ No allocation found"
-            return debug_steps
-        else:
-            debug_steps["step3_check"] = "✅ Allocation found"
-        
-        # Step 4: Access basic fields
-        try:
-            allocation_id = latest.allocation_id
-            debug_steps["step4_allocation_id"] = f"✅ allocation_id: {allocation_id}"
-        except Exception as e:
-            debug_steps["step4_allocation_id"] = f"❌ Error accessing allocation_id: {str(e)}"
-            return debug_steps
-        
-        try:
-            status = latest.status
-            debug_steps["step4_status"] = f"✅ status: {status}"
-        except Exception as e:
-            debug_steps["step4_status"] = f"❌ Error accessing status: {str(e)}"
-            return debug_steps
-        
-        try:
-            created_at = latest.created_at
-            debug_steps["step4_created_at"] = f"✅ created_at: {created_at}"
-        except Exception as e:
-            debug_steps["step4_created_at"] = f"❌ Error accessing created_at: {str(e)}"
-            return debug_steps
-        
-        try:
-            obj_id = str(latest.id)
-            debug_steps["step4_id"] = f"✅ id: {obj_id}"
-        except Exception as e:
-            debug_steps["step4_id"] = f"❌ Error accessing id: {str(e)}"
-            return debug_steps
-        
-        # Step 5: Build basic response
-        try:
-            basic_response = {
-                "allocation_id": allocation_id,
-                "status": status,
-                "created_at": created_at,
-                "_id": obj_id
-            }
-            debug_steps["step5_basic_response"] = "✅ Basic response built"
-        except Exception as e:
-            debug_steps["step5_basic_response"] = f"❌ Error building basic response: {str(e)}"
-            return debug_steps
-        
-        # Step 6: Add student_allocations
-        try:
-            student_allocations = getattr(latest, 'student_allocations', {})
-            basic_response["student_allocations"] = student_allocations
-            debug_steps["step6_student_allocations"] = "✅ Student allocations added"
-        except Exception as e:
-            debug_steps["step6_student_allocations"] = f"❌ Error adding student_allocations: {str(e)}"
-            return debug_steps
-        
-        # Step 7: Add issues
-        try:
-            issues = getattr(latest, 'issues', []) or []
-            basic_response["issues"] = issues
-            debug_steps["step7_issues"] = "✅ Issues added"
-        except Exception as e:
-            debug_steps["step7_issues"] = f"❌ Error adding issues: {str(e)}"
-            return debug_steps
-        
-        # Step 8: Add course data
-        try:
-            if hasattr(latest, 'course_summaries'):
-                basic_response["course_summaries"] = latest.course_summaries
-                debug_steps["step8_course_summaries"] = "✅ Course summaries added"
-            elif hasattr(latest, 'course_enrollments'):
-                basic_response["course_enrollments"] = latest.course_enrollments
-                debug_steps["step8_course_enrollments"] = "✅ Course enrollments added"
-            else:
-                basic_response["course_summaries"] = {}
-                debug_steps["step8_course_fallback"] = "✅ Course fallback added"
-        except Exception as e:
-            debug_steps["step8_course_data"] = f"❌ Error adding course data: {str(e)}"
-            return debug_steps
-        
-        # Step 9: Final response
-        debug_steps["step9_final"] = "✅ All steps completed successfully"
-        debug_steps["final_response"] = basic_response
-        
-        return debug_steps
-        
-    except Exception as e:
-        debug_steps["fatal_error"] = f"❌ Fatal error: {str(e)} (Type: {type(e).__name__})"
-        import traceback
-        debug_steps["traceback"] = traceback.format_exc()
-        return debug_steps
+        logger.error(f"Error fetching preferences: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-# Also create a minimal working version
-@router.get("/allocations/latest-minimal")
-async def get_latest_allocation_minimal():
-    """Minimal version that only returns basic info"""
+# ==================== ALLOCATION ENDPOINTS ====================
+
+@router.post("/allocate", response_model=AllocationResponse)
+async def allocate():
+    """Trigger course allocation for confirmed students"""
     try:
+        logger.info("Starting course allocation process")
+        
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        if not ALLOCATION_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Allocation service temporarily unavailable")
+        
+        # Get only confirmed students
+        confirmed_students = await StudentPreferenceDB.find(
+            {"status": "confirmed"}
+        ).to_list()
+        
+        if not confirmed_students:
+            raise HTTPException(status_code=400, detail="No confirmed student preferences found")
+            
+        logger.info(f"Found {len(confirmed_students)} confirmed students")
+        
+        # Convert to API models
+        api_students = []
+        
+        for student in confirmed_students:
+            try:
+                # Create API model with proper data conversion
+                api_student = StudentPreference(
+                    student_id=student.student_id,
+                    name=student.name,
+                    preferences=student.preferences,
+                    status="confirmed"
+                )
+                api_students.append(api_student)
+                
+            except Exception as e:
+                logger.error(f"Error converting student {student.student_id}: {str(e)}")
+                continue
+        
+        if not api_students:
+            raise HTTPException(status_code=400, detail="No valid student preferences after conversion")
+            
+        logger.info(f"Processing {len(api_students)} valid students")
+        
+        # Run allocation
+        allocation_result = allocate_courses(api_students)
+        
+        # Save allocation result
+        db_allocation = AllocationResult(
+            allocation_id=allocation_result.allocation_id,
+            student_allocations={
+                student.student_id: student.allocations 
+                for student in allocation_result.student_allocations
+            },
+            course_enrollments={
+                course_id: course.students 
+                for course_id, course in allocation_result.course_summaries.items()
+            },
+            status="completed",
+            issues=allocation_result.issues
+        )
+        
+        await db_allocation.insert()
+        
+        logger.info(f"Allocation completed successfully. ID: {allocation_result.allocation_id}")
+        
+        return allocation_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/allocations/latest")
+async def get_latest_allocation():
+    """Get the most recent allocation"""
+    try:
+        if not DB_AVAILABLE:
+            return {
+                "allocation_id": None,
+                "status": "service_unavailable",
+                "message": "Database service temporarily unavailable"
+            }
+        
         latest = await AllocationResult.find_one(sort=[("created_at", -1)])
         
         if not latest:
             return {
                 "allocation_id": None,
                 "status": "no_allocations",
-                "message": "No allocations found"
+                "message": "No allocations found yet"
             }
-        
-        # Return only the basic fields we know work
+
         return {
             "allocation_id": latest.allocation_id,
             "status": latest.status,
-            "created_at": str(latest.created_at),  # Convert to string to avoid serialization issues
-            "_id": str(latest.id)
+            "created_at": latest.created_at,
+            "student_allocations": getattr(latest, 'student_allocations', {}),
+            "course_enrollments": getattr(latest, 'course_enrollments', {}),
+            "issues": getattr(latest, 'issues', [])
         }
         
     except Exception as e:
-        logger.error(f"Minimal latest error: {str(e)}")
+        logger.error(f"Error fetching latest allocation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== STATS ENDPOINTS ====================
+
+@router.get("/stats", response_model=dict)
+async def get_stats():
+    """Get system statistics"""
+    try:
+        if not DB_AVAILABLE:
+            return {
+                "totalSubmissions": 0,
+                "pendingAllocations": 0,
+                "completedAllocations": 0,
+                "message": "Database service temporarily unavailable"
+            }
+        
+        # Get total confirmed students (these are the ones that should be allocated)
+        confirmed_students = await StudentPreferenceDB.find({"status": "confirmed"}).count()
+        
+        # Get completed allocations count
+        completed_allocations = await AllocationResult.find({"status": "completed"}).count()
+        
+        # Get latest allocation to count actually allocated students
+        latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
+        
+        allocated_students = 0
+        if latest_allocation and latest_allocation.student_allocations:
+            allocated_students = len(latest_allocation.student_allocations)
+
+        return {
+            "totalSubmissions": confirmed_students,
+            "pendingAllocations": max(0, confirmed_students - allocated_students),
+            "completedAllocations": allocated_students
+        }
+    except Exception as e:
+        logger.error(f"Error fetching stats: {str(e)}")
+        return {
+            "totalSubmissions": 0,
+            "pendingAllocations": 0,
+            "completedAllocations": 0,
+            "error": str(e)
+        }
+
+# ==================== ADMIN ENDPOINTS ====================
+
+@router.get("/admin/summary")
+async def get_admin_summary():
+    """Get admin summary of preferences"""
+    try:
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        all_preferences = await StudentPreferenceDB.find().to_list()
+        
+        summary = {
+            "total_students": len(all_preferences),
+            "by_status": {"draft": 0, "submitted": 0, "confirmed": 0},
+            "course_popularity": {}
+        }
+        
+        # Count by status
+        for pref in all_preferences:
+            status = pref.status
+            if status in summary["by_status"]:
+                summary["by_status"][status] += 1
+        
+        # Count course popularity
+        course_counts = {}
+        for pref in all_preferences:
+            for category, choices in pref.preferences.items():
+                if isinstance(choices, dict):
+                    for choice_key, course in choices.items():
+                        if course and course.strip():
+                            course_counts[course] = course_counts.get(course, 0) + 1
+        
+        # Sort by popularity
+        summary["course_popularity"] = dict(sorted(course_counts.items(), key=lambda x: x[1], reverse=True))
+        
+        return summary
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching admin summary: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/admin/preferences-analysis")
+async def get_preferences_analysis():
+    """Get detailed preferences analysis"""
+    try:
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        all_preferences = await StudentPreferenceDB.find().to_list()
+        
+        analysis = {
+            "overview": {
+                "total_students": len(all_preferences),
+                "submitted_preferences": sum(1 for p in all_preferences if p.status != "draft"),
+                "confirmed_preferences": sum(1 for p in all_preferences if p.status == "confirmed")
+            },
+            "course_popularity": {},
+            "category_stats": {}
+        }
+        
+        course_counts = {}
+        category_counts = {}
+        
+        for pref in all_preferences:
+            for category, choices in pref.preferences.items():
+                if category not in category_counts:
+                    category_counts[category] = {"choice1": {}, "choice2": {}}
+                
+                if isinstance(choices, dict):
+                    # Count choice1
+                    choice1 = choices.get("choice1", "").strip()
+                    if choice1:
+                        course_counts[choice1] = course_counts.get(choice1, 0) + 1
+                        category_counts[category]["choice1"][choice1] = category_counts[category]["choice1"].get(choice1, 0) + 1
+                    
+                    # Count choice2
+                    choice2 = choices.get("choice2", "").strip()
+                    if choice2:
+                        course_counts[choice2] = course_counts.get(choice2, 0) + 1
+                        category_counts[category]["choice2"][choice2] = category_counts[category]["choice2"].get(choice2, 0) + 1
+        
+        # Sort by popularity
+        analysis["course_popularity"] = dict(sorted(course_counts.items(), key=lambda x: x[1], reverse=True))
+        analysis["category_stats"] = category_counts
+        
+        return analysis
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching preferences analysis: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# ==================== STUDENT STATUS ENDPOINTS ====================
 
 @router.get("/student/{student_id}/status")
 async def get_student_allocation_status(student_id: str):
-    """Get allocation status for a specific student with preference numbers"""
+    """Get allocation status for a specific student"""
     try:
-        logger.info(f"Fetching allocation status for student {student_id}")
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
-        # First check if student has submitted preferences
-        student_pref = await StudentPreferenceDB.find_one({"student_id": student_id})
+        # Get student preferences
+        preference = await StudentPreferenceDB.find_one({"student_id": student_id})
+        if not preference:
+            raise HTTPException(status_code=404, detail="Student preferences not found")
         
-        if not student_pref:
-            return {
-                "student_id": student_id,
-                "status": "no_preferences",
-                "message": "No preferences submitted yet",
-                "allocations": {},
-                "submission_status": None
-            }
-        
-        # Get the latest allocation result
+        # Get latest allocation
         latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
         
-        if not latest_allocation:
-            return {
-                "student_id": student_id,
-                "status": "no_allocation_run",
-                "message": "No allocation has been run yet",
-                "allocations": {},
-                "submission_status": student_pref.status,
-                "preferences_confirmed": student_pref.status == "confirmed"
-            }
-        
-        # Check if student is in the allocation results
-        student_allocations = latest_allocation.student_allocations.get(student_id, {})
-        
-        if not student_allocations:
-            return {
-                "student_id": student_id,
-                "status": "not_allocated",
-                "message": "Not included in latest allocation (preferences may not be confirmed)",
-                "allocations": {},
-                "submission_status": student_pref.status,
-                "preferences_confirmed": student_pref.status == "confirmed",
-                "allocation_id": latest_allocation.allocation_id
-            }
-        
-        # Student has allocations - format them with course names and preference numbers
-        formatted_allocations = {}
-        for category, allocated_course_id in student_allocations.items():
-            course_name = get_course_name(allocated_course_id)
-            
-            # Determine which preference was allocated
-            preference_number = None
-            if category in student_pref.preferences:
-                category_prefs = student_pref.preferences[category]
-                choice1 = str(category_prefs.get("choice1", "")).strip()
-                choice2 = str(category_prefs.get("choice2", "")).strip()
-                
-                if allocated_course_id == choice1:
-                    preference_number = "1st Choice"
-                elif allocated_course_id == choice2:
-                    preference_number = "2nd Choice"
-                else:
-                    preference_number = "Alternative" # Emergency allocation
-            
-            formatted_allocations[category] = {
-                "course_id": allocated_course_id,
-                "course_name": course_name,
-                "status": "allocated",
-                "preference_number": preference_number,
-                "original_preferences": {
-                    "choice1": {
-                        "id": student_pref.preferences.get(category, {}).get("choice1", ""),
-                        "name": get_course_name(student_pref.preferences.get(category, {}).get("choice1", ""))
-                    },
-                    "choice2": {
-                        "id": student_pref.preferences.get(category, {}).get("choice2", ""),
-                        "name": get_course_name(student_pref.preferences.get(category, {}).get("choice2", ""))
-                    }
-                }
-            }
-        
-        return {
+        status_info = {
             "student_id": student_id,
-            "status": "allocated",
-            "message": f"Successfully allocated to {len(student_allocations)} courses",
-            "allocations": formatted_allocations,
-            "submission_status": student_pref.status,
-            "preferences_confirmed": student_pref.status == "confirmed",
-            "allocation_id": latest_allocation.allocation_id,
-            "allocation_date": latest_allocation.created_at
+            "name": preference.name,
+            "preference_status": preference.status,
+            "allocation_status": "not_allocated",
+            "allocated_courses": {},
+            "allocation_date": None
         }
         
+        if latest_allocation and latest_allocation.student_allocations:
+            student_allocation = latest_allocation.student_allocations.get(student_id)
+            if student_allocation:
+                status_info["allocation_status"] = "allocated"
+                status_info["allocated_courses"] = student_allocation
+                status_info["allocation_date"] = latest_allocation.created_at
+        
+        return status_info
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching student status: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching student status: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# ==================== DOWNLOAD/REPORT ENDPOINTS ====================
+
+@router.get("/download/{allocation_id}")
+async def download_allocation_report(
+    allocation_id: str,
+    format: DownloadFormat = Query(DownloadFormat.EXCEL),
+    background_tasks: BackgroundTasks = None
+):
+    """Download allocation report in specified format"""
+    try:
+        logger.info(f"Starting report generation for allocation {allocation_id} in format {format}")
+        
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        if not REPORT_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Report service temporarily unavailable")
+        
+        # Get allocation data from database
+        allocation_db = await AllocationResult.find_one({"allocation_id": allocation_id})
+        if not allocation_db:
+            raise HTTPException(status_code=404, detail="Allocation not found")
+        
+        logger.info(f"Found allocation with {len(allocation_db.student_allocations)} students")
+        
+        # Convert database model to API model for report generation
+        student_allocations = []
+        for student_id, allocations in allocation_db.student_allocations.items():
+            # Get student name from preferences
+            try:
+                student_pref = await StudentPreferenceDB.find_one({"student_id": student_id})
+                student_name = student_pref.name if student_pref else f"Student {student_id}"
+            except Exception as e:
+                logger.warning(f"Could not get name for student {student_id}: {e}")
+                student_name = f"Student {student_id}"
+            
+            student_allocation = StudentAllocation(
+                student_id=student_id,
+                name=student_name,
+                allocations=allocations,
+                issues=[]  # Issues are stored at allocation level
+            )
+            student_allocations.append(student_allocation)
+        
+        # Convert course enrollments to course summaries
+        course_summaries = {}
+        for course_id, students in allocation_db.course_enrollments.items():
+            course_enrollment = CourseEnrollment(
+                course_id=course_id,
+                name=get_course_name(course_id),
+                enrolled=len(students),
+                students=students,
+                min_enrollment=20  # Default minimum enrollment
+            )
+            course_summaries[course_id] = course_enrollment
+        
+        # Create AllocationResponse object
+        allocation_response = AllocationResponse(
+            allocation_id=allocation_db.allocation_id,
+            student_allocations=student_allocations,
+            course_summaries=course_summaries,
+            issues=allocation_db.issues or []
+        )
+        
+        logger.info(f"Created allocation response with {len(student_allocations)} students and {len(course_summaries)} courses")
+        
+        # Create temp directory if it doesn't exist
+        temp_dir = Path("temp_reports")
+        temp_dir.mkdir(exist_ok=True)
+        
+        # Generate unique filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        file_extension = "xlsx" if format == DownloadFormat.EXCEL else "csv"
+        filename = f"allocation_report_{allocation_id}_{timestamp}.{file_extension}"
+        file_path = temp_dir / filename
+        
+        logger.info(f"Generating report at path: {file_path}")
+        
+        # Generate report using the corrected function call
+        try:
+            # Call the report generation function with proper arguments
+            from services.report import generate_simple_allocation_report
+            
+            generated_file_path = generate_simple_allocation_report(
+                allocation_response, 
+                str(file_path), 
+                format.value
+            )
+            
+            logger.info(f"Report generated successfully at: {generated_file_path}")
+            
+        except Exception as report_error:
+            logger.error(f"Report generation failed: {report_error}")
+            raise HTTPException(status_code=500, detail=f"Report generation failed: {str(report_error)}")
+        
+        # Verify the file exists
+        if not os.path.exists(generated_file_path):
+            raise HTTPException(status_code=500, detail=f"Report file not found at {generated_file_path}")
+        
+        # Schedule cleanup
+        if background_tasks:
+            background_tasks.add_task(cleanup_temp_file, generated_file_path)
+        
+        # Determine media type
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if format == DownloadFormat.EXCEL else "text/csv"
+        
+        logger.info(f"Returning file response for {generated_file_path}")
+        
+        return FileResponse(
+            path=generated_file_path,
+            media_type=media_type,
+            filename=f"allocation_report_{allocation_id}.{file_extension}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating download: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# ==================== UTILITY FUNCTIONS ====================
 
 def get_course_name(course_id: str) -> str:
-    """Get readable course names - move this to a shared utility if needed"""
+    """Get readable course names"""
     course_names = {
         # PECL1 courses
         '25PECL13CE11': 'Image Processing Lab',
@@ -1141,28 +739,39 @@ def get_course_name(course_id: str) -> str:
         '25PEC13CE16': 'HMI',
         '25PEC13CE17': 'Geographical Information Systems',
         
-        # Open Electives
-        'OE1': 'Advanced Microprocessor',
-        'OE2': 'Internet of Things',
-        'OE3': 'E-Vehicle',
-        'OE4': 'Supply Chain Management',
-        'OE5': 'Design of Experiments',
-        'OE6': '3D Printing',
-        
-        # Honors
-        'H1': 'IoT Honors',
-        'H2': 'AI/ML Honors', 
-        'H3': 'Data Science Honors',
-        'H4': 'Blockchain Honors',
-        'H5': 'Cybersecurity Honors',
-        
-        # Minor
-        'M1': 'Robotics Minor',
-        'M2': '3D Printing Minor',
-        
         # MDM
         'MDM1': 'Emotional and Spiritual Intelligence',
         'MDM2': 'Health, Wellness and Psychology'
     }
     
     return course_names.get(course_id, course_id)
+
+# Add a comprehensive test endpoint
+@router.get("/test")
+async def test_endpoint():
+    """Test endpoint to check all services"""
+    return {
+        "message": "API endpoints are working",
+        "timestamp": datetime.utcnow().isoformat(),
+        "available_services": {
+            "database": DB_AVAILABLE,
+            "allocation": ALLOCATION_AVAILABLE,
+            "reports": REPORT_AVAILABLE,
+            "validation": VALIDATION_AVAILABLE,
+            "authentication": AUTH_AVAILABLE
+        },
+        "endpoints": [
+            "GET /api/health - Health check",
+            "GET /api/status - Service status",
+            "POST /api/preferences/submit - Submit preferences",
+            "POST /api/preferences/{student_id}/confirm - Confirm preferences",
+            "GET /api/preferences/{student_id} - Get student preferences",
+            "POST /api/allocate - Trigger allocation",
+            "GET /api/allocations/latest - Get latest allocation",
+            "GET /api/stats - Get system stats",
+            "GET /api/admin/summary - Admin summary",
+            "GET /api/admin/preferences-analysis - Preferences analysis",
+            "GET /api/student/{student_id}/status - Student allocation status",
+            "GET /api/download/{allocation_id} - Download reports"
+        ]
+    }
