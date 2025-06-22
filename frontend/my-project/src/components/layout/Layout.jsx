@@ -80,13 +80,13 @@ function Layout() {
                   to="/admin/analytics"
                   className={linkClasses('/admin/analytics')}
                 >
-                  Analytics
+                  Preferences Analysis
                 </Link>
                 <Link
                   to="/admin/preferences-analysis"
                   className={linkClasses('/admin/preferences-analysis')}
                 >
-                  Preferences Analysis
+                  Post-Allocation Analysis
                 </Link>
               </>
             )}

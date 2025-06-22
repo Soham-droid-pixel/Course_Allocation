@@ -13,6 +13,7 @@ import AdminReports from './pages/admin/Reports'
 import AdminAnalytics from './pages/admin/Analytics'
 import PreferencesAnalysis from './pages/admin/PreferencesAnalysis'
 import PreferenceConfirmation from './pages/student/PreferenceConfirmation'
+import SimpleConfirm from './components/SimpleConfirm.jsx' // Import your SimpleConfirm component
 
 // Component to handle role-based redirection
 function RoleBasedRedirect() {
@@ -104,6 +105,9 @@ function AppContent() {
             <PreferencesAnalysis />
           </ProtectedRoute>
         } />
+
+        {/* Simple Confirm Route */}
+        <Route path="/simple-confirm" element={<SimpleConfirm />} />
 
         {/* Default redirect based on user role */}
         <Route index element={<RoleBasedRedirect />} />

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
-import { getStudentAllocationStatus } from '../../services/api'
+import { getMyAllocationStatus } from '../../services/api'
+import { useAuth } from '../../hooks/useAuth.jsx'
 
 function StudentDashboard() {
+  const { user } = useAuth(); // Get authenticated user
   const [allocatedCourses, setAllocatedCourses] = useState([])
   const [loading, setLoading] = useState(true)
-  const [studentId, setStudentId] = useState('')
   const [dashboardStats, setDashboardStats] = useState({
     totalAllocated: 0,
     firstChoices: 0,
@@ -20,28 +21,22 @@ function StudentDashboard() {
   const [quickTips, setQuickTips] = useState([])
 
   useEffect(() => {
-    const storedStudentId = localStorage.getItem('studentId')
-    if (storedStudentId) {
-      setStudentId(storedStudentId)
-      fetchStudentData(storedStudentId)
+    if (user && user.roll_number) {
+      fetchStudentData()
     } else {
       setLoading(false)
     }
 
-    // Update time every minute
-    const timeInterval = setInterval(() => setCurrentTime(new Date()), 60000)
-    
     // Generate notifications and tips
     generateNotifications()
     generateQuickTips()
+  }, [user])
 
-    return () => clearInterval(timeInterval)
-  }, [])
-
-  const fetchStudentData = async (id) => {
+  const fetchStudentData = async () => {
     try {
       setLoading(true)
-      const statusData = await getStudentAllocationStatus(id)
+      // Use the new authenticated endpoint
+      const statusData = await getMyAllocationStatus()
       
       const courses = []
       const stats = {
@@ -62,7 +57,6 @@ function StudentDashboard() {
           status: 'allocated',
           preferenceNumber: allocation.preference_number,
           originalPreferences: allocation.original_preferences,
-          // Add course-specific info
           difficulty: getCourseInfo(allocation.course_id).difficulty,
           prerequisites: getCourseInfo(allocation.course_id).prerequisites,
           credits: getCourseInfo(allocation.course_id).credits,
@@ -205,14 +199,6 @@ function StudentDashboard() {
     }
   }
 
-  const handleStudentIdSubmit = (e) => {
-    e.preventDefault()
-    if (studentId.trim()) {
-      localStorage.setItem('studentId', studentId.trim())
-      fetchStudentData(studentId.trim())
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -224,32 +210,10 @@ function StudentDashboard() {
     )
   }
 
-  if (!studentId) {
+  if (!user) {
     return (
-      <div className="max-w-md mx-auto mt-12">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-xl font-bold mb-4">Welcome to Student Dashboard</h2>
-          <form onSubmit={handleStudentIdSubmit}>
-            <label htmlFor="studentId" className="block text-sm font-medium text-gray-700 mb-2">
-              Enter your Student ID
-            </label>
-            <input
-              type="text"
-              id="studentId"
-              value={studentId}
-              onChange={(e) => setStudentId(e.target.value)}
-              placeholder="e.g., STU1001"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-              required
-            />
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
-            >
-              Access Dashboard
-            </button>
-          </form>
-        </div>
+      <div className="text-center py-12">
+        <p className="text-gray-600">Please log in to access your dashboard.</p>
       </div>
     )
   }
@@ -260,7 +224,7 @@ function StudentDashboard() {
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-2xl font-bold">{getGreeting()}, {studentId}! 👋</h2>
+            <h2 className="text-2xl font-bold">{getGreeting()}, {user.roll_number}! 👋</h2>
             <p className="opacity-90">
               {currentTime.toLocaleDateString()} • {currentTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
             </p>
@@ -288,7 +252,7 @@ function StudentDashboard() {
             📊 Full Status
           </Link>
           <button 
-            onClick={() => fetchStudentData(studentId)}
+            onClick={() => fetchStudentData()}
             className="flex items-center gap-2 bg-purple-50 text-purple-700 px-4 py-2 rounded-lg hover:bg-purple-100 transition-colors"
           >
             🔄 Refresh

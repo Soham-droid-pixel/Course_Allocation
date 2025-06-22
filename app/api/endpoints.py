@@ -131,96 +131,21 @@ async def health_check():
 # ==================== PREFERENCES ENDPOINTS ====================
 
 @router.post("/preferences/submit", status_code=201)
-async def submit_preferences(request_data: Dict[str, Any]):
+async def submit_preferences(
+    request_data: Dict[str, Any],
+    current_user: User = Depends(get_current_student)  # Require authentication
+):
     """Submit student preferences"""
     try:
-        logger.info(f"Received preference submission: {request_data}")
+        logger.info(f"Received preference submission from authenticated user: {current_user.email}")
         
         if not DB_AVAILABLE:
             raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
-        # Extract and validate required fields
-        student_id = request_data.get("student_id")
-        if not student_id:
-            raise HTTPException(status_code=400, detail="student_id is required")
-        
-        # Process preferences and convert to expected format
-        processed_preferences = {}
-        raw_preferences = request_data.get("preferences", {})
-        
-        for category in CourseCategory:
-            category_key = category.value
-            category_data = raw_preferences.get(category_key, {})
-            
-            if isinstance(category_data, dict):
-                processed_preferences[category_key] = {
-                    "choice1": str(category_data.get("choice1") or "").strip(),
-                    "choice2": str(category_data.get("choice2") or "").strip()
-                }
-            else:
-                processed_preferences[category_key] = {
-                    "choice1": "",
-                    "choice2": ""
-                }
-
-        # Prepare validated data
-        preference_data = {
-            "student_id": student_id,
-            "name": request_data.get("name", "Unknown"),
-            "preferences": processed_preferences,
-            "status": request_data.get("status", "draft"),
-            "comments": request_data.get("comments", ""),
-            "updated_at": datetime.utcnow()
-        }
-
-        # Validate using Pydantic model
-        validated_preference = StudentPreference(**preference_data)
-
-        # Save to database
-        existing = await StudentPreferenceDB.find_one({"student_id": student_id})
-        
-        if existing:
-            existing.name = validated_preference.name
-            existing.preferences = validated_preference.preferences
-            existing.status = validated_preference.status
-            existing.comments = validated_preference.comments
-            existing.updated_at = datetime.utcnow()
-            await existing.save()
-            logger.info(f"Updated preferences for student {student_id}")
-        else:
-            db_preference = StudentPreferenceDB(
-                student_id=validated_preference.student_id,
-                name=validated_preference.name,
-                preferences=validated_preference.preferences,
-                status=validated_preference.status,
-                comments=validated_preference.comments,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
-            await db_preference.save()
-            logger.info(f"Created new preferences for student {student_id}")
-
-        return {
-            "message": "Preferences submitted successfully",
-            "student_id": student_id,
-            "status": validated_preference.status
-        }
-
-    except ValueError as e:
-        logger.error(f"Validation error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error submitting preferences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/preferences/{student_id}/confirm")
-async def confirm_preferences(student_id: str, request_data: Dict[str, Any]):
-    """Confirm student preferences"""
-    try:
-        if not DB_AVAILABLE:
-            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
-        
-        logger.info(f"Confirming preferences for student {student_id}")
+        # Use authenticated user's roll_number
+        roll_number = current_user.roll_number
+        if not roll_number:
+            raise HTTPException(status_code=400, detail="Roll number not found for authenticated user")
         
         # Process preferences
         processed_preferences = {}
@@ -241,55 +166,117 @@ async def confirm_preferences(student_id: str, request_data: Dict[str, Any]):
                     "choice2": ""
                 }
 
-        confirmation_data = {
-            "student_id": student_id,
-            "name": request_data.get("name", "Unknown"),
+        # Prepare validated data using roll_number
+        preference_data = {
+            "roll_number": roll_number,
+            "name": request_data.get("name", current_user.email.split('@')[0]),  # Fallback to email prefix
             "preferences": processed_preferences,
-            "confirm": request_data.get("confirm", False),
+            "status": request_data.get("status", "draft"),
             "comments": request_data.get("comments", ""),
-            "status": "confirmed" if request_data.get("confirm") else "draft",
             "updated_at": datetime.utcnow()
         }
 
-        # Validate the confirmation
-        validated_confirmation = PreferenceConfirmation(**confirmation_data)
+        # Validate using Pydantic model
+        validated_preference = StudentPreference(**preference_data)
 
-        # Update database
-        existing = await StudentPreferenceDB.find_one({"student_id": student_id})
-        if not existing:
-            raise HTTPException(status_code=404, detail="Preferences not found")
-
-        existing.preferences = validated_confirmation.preferences
-        existing.status = validated_confirmation.status
-        existing.comments = validated_confirmation.comments
-        existing.updated_at = datetime.utcnow()
-        await existing.save()
+        # Save to database
+        existing = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        
+        if existing:
+            existing.name = validated_preference.name
+            existing.preferences = validated_preference.preferences
+            existing.status = validated_preference.status
+            existing.comments = validated_preference.comments
+            existing.updated_at = datetime.utcnow()
+            await existing.save()
+            logger.info(f"Updated preferences for student {roll_number}")
+        else:
+            db_preference = StudentPreferenceDB(
+                roll_number=validated_preference.roll_number,
+                name=validated_preference.name,
+                preferences=validated_preference.preferences,
+                status=validated_preference.status,
+                comments=validated_preference.comments,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            await db_preference.save()
+            logger.info(f"Created new preferences for student {roll_number}")
 
         return {
-            "message": "Preferences confirmed successfully" if validated_confirmation.confirm else "Preferences saved as draft",
-            "status": existing.status
+            "message": "Preferences submitted successfully",
+            "roll_number": roll_number,
+            "status": validated_preference.status
         }
 
     except ValueError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error confirming preferences: {e}")
+        logger.error(f"Error submitting preferences: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/preferences/confirm")
+async def confirm_preferences(
+    request_data: Dict[str, Any],
+    current_user: User = Depends(get_current_student)
+):
+    """Explicit flipped logic for confirmation"""
+    try:
+        roll_number = current_user.roll_number
+        logger.info(f"=== PROCESSING CONFIRMATION for {roll_number} ===")
+        
+        student = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        confirm_flag = request_data.get("confirm", False)
+        logger.info(f"Raw confirm flag: {confirm_flag}")
+        
+        # EXPLICIT FLIP - Since frontend sends opposite of what we need
+        actual_confirm = not confirm_flag  # Flip the boolean
+        logger.info(f"Flipped confirm flag: {actual_confirm}")
+        
+        if actual_confirm:  # Now this will be True when user wants to confirm
+            student.status = "confirmed"
+            message = "Preferences confirmed successfully"
+            logger.info(f"Setting to CONFIRMED")
+        else:
+            student.status = "draft"
+            message = "Preferences saved as draft"
+            logger.info(f"Setting to DRAFT")
+        
+        student.comments = request_data.get("comments", student.comments or "")
+        student.updated_at = datetime.utcnow()
+        await student.save()
+        
+        logger.info(f"=== FINAL STATUS: {student.status.upper()} ===")
+        
+        return {
+            "message": message,
+            "status": student.status,
+            "roll_number": roll_number
+        }
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/preferences/{student_id}")
-async def get_student_preferences(student_id: str):
-    """Get preferences for a specific student"""
+@router.get("/preferences/me")
+async def get_my_preferences(current_user: User = Depends(get_current_student)):
+    """Get preferences for authenticated student"""
     try:
         if not DB_AVAILABLE:
             raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
-        preference = await StudentPreferenceDB.find_one({"student_id": student_id})
+        roll_number = current_user.roll_number
+        preference = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        
         if not preference:
             raise HTTPException(status_code=404, detail="Preferences not found")
         
         return {
-            "student_id": preference.student_id,
+            "roll_number": preference.roll_number,
             "name": preference.name,
             "preferences": preference.preferences,
             "status": preference.status,
@@ -301,6 +288,47 @@ async def get_student_preferences(student_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching preferences: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/student/me/status")
+async def get_my_allocation_status(current_user: User = Depends(get_current_student)):
+    """Get allocation status for authenticated student"""
+    try:
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        roll_number = current_user.roll_number
+        
+        # Get student preferences
+        preference = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        if not preference:
+            raise HTTPException(status_code=404, detail="Student preferences not found")
+        
+        # Get latest allocation
+        latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
+        
+        status_info = {
+            "roll_number": roll_number,
+            "name": preference.name,
+            "preference_status": preference.status,
+            "allocation_status": "not_allocated",
+            "allocated_courses": {},
+            "allocation_date": None
+        }
+        
+        if latest_allocation and latest_allocation.student_allocations:
+            student_allocation = latest_allocation.student_allocations.get(roll_number)
+            if student_allocation:
+                status_info["allocation_status"] = "allocated"
+                status_info["allocated_courses"] = student_allocation
+                status_info["allocation_date"] = latest_allocation.created_at
+        
+        return status_info
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching student status: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # ==================== ALLOCATION ENDPOINTS ====================
@@ -327,14 +355,14 @@ async def allocate():
             
         logger.info(f"Found {len(confirmed_students)} confirmed students")
         
-        # Convert to API models
+        # Convert to API models - USE ROLL_NUMBER
         api_students = []
         
         for student in confirmed_students:
             try:
-                # Create API model with proper data conversion
+                # Create API model with proper data conversion using roll_number
                 api_student = StudentPreference(
-                    student_id=student.student_id,
+                    roll_number=student.roll_number,  # Changed from student_id
                     name=student.name,
                     preferences=student.preferences,
                     status="confirmed"
@@ -342,7 +370,7 @@ async def allocate():
                 api_students.append(api_student)
                 
             except Exception as e:
-                logger.error(f"Error converting student {student.student_id}: {str(e)}")
+                logger.error(f"Error converting student {student.roll_number}: {str(e)}")  # Changed
                 continue
         
         if not api_students:
@@ -353,11 +381,11 @@ async def allocate():
         # Run allocation
         allocation_result = allocate_courses(api_students)
         
-        # Save allocation result
+        # Save allocation result - USE ROLL_NUMBER
         db_allocation = AllocationResult(
             allocation_id=allocation_result.allocation_id,
             student_allocations={
-                student.student_id: student.allocations 
+                student.roll_number: student.allocations  # Changed from student_id
                 for student in allocation_result.student_allocations
             },
             course_enrollments={
@@ -499,67 +527,281 @@ async def get_admin_summary():
 
 @router.get("/admin/preferences-analysis")
 async def get_preferences_analysis():
-    """Get detailed preferences analysis"""
+    """Get detailed preferences analysis with error handling"""
     try:
         if not DB_AVAILABLE:
             raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
-        all_preferences = await StudentPreferenceDB.find().to_list()
+        logger.info("Fetching preferences analysis")
         
-        analysis = {
-            "overview": {
-                "total_students": len(all_preferences),
-                "submitted_preferences": sum(1 for p in all_preferences if p.status != "draft"),
-                "confirmed_preferences": sum(1 for p in all_preferences if p.status == "confirmed")
+        # Use raw MongoDB query to handle invalid documents
+        from motor.motor_asyncio import AsyncIOMotorClient
+        import os
+        from pymongo.errors import PyMongoError
+        
+        try:
+            # Direct MongoDB access to avoid Pydantic validation issues
+            client = AsyncIOMotorClient(os.getenv("MONGODB_URL", "mongodb://localhost:27017"))
+            db = client.course_allocation
+            collection = db.student_preferences
+            
+            # Find documents with required fields only
+            all_preferences_raw = await collection.find({
+                "roll_number": {"$exists": True, "$ne": None, "$ne": ""},
+                "preferences": {"$exists": True}
+            }).to_list(None)
+            
+            logger.info(f"Found {len(all_preferences_raw)} valid preference documents")
+            
+        except Exception as e:
+            logger.error(f"Direct MongoDB query failed: {e}")
+            # Fallback to Beanie with error handling
+            try:
+                all_preferences_raw = []
+                async for pref in StudentPreferenceDB.find():
+                    try:
+                        # Convert to dict to avoid validation
+                        pref_dict = pref.dict() if hasattr(pref, 'dict') else pref
+                        if pref_dict.get('roll_number'):
+                            all_preferences_raw.append(pref_dict)
+                    except Exception as doc_error:
+                        logger.warning(f"Skipping invalid document: {doc_error}")
+                        continue
+            except Exception as beanie_error:
+                logger.error(f"Beanie query also failed: {beanie_error}")
+                all_preferences_raw = []
+        
+        if not all_preferences_raw:
+            logger.info("No valid preferences found")
+            return {
+                "summary": {
+                    "total_students": 0,
+                    "confirmed_students": 0,
+                    "draft_students": 0,
+                    "completion_rate": 0
+                },
+                "course_demand": {},
+                "category_analysis": {},
+                "student_details": []
+            }
+        
+        # Process the raw data safely
+        valid_preferences = []
+        for pref_raw in all_preferences_raw:
+            try:
+                # Ensure required fields exist
+                if not pref_raw.get('roll_number'):
+                    logger.warning(f"Skipping document without roll_number: {pref_raw.get('_id')}")
+                    continue
+                
+                # Create a normalized preference object
+                normalized_pref = {
+                    'roll_number': str(pref_raw.get('roll_number', '')),
+                    'name': str(pref_raw.get('name', 'Unknown')),
+                    'status': str(pref_raw.get('status', 'draft')),
+                    'preferences': pref_raw.get('preferences', {}),
+                    'comments': str(pref_raw.get('comments', '')),
+                    'created_at': pref_raw.get('created_at'),
+                    'updated_at': pref_raw.get('updated_at')
+                }
+                
+                # Ensure preferences is a dict
+                if not isinstance(normalized_pref['preferences'], dict):
+                    normalized_pref['preferences'] = {}
+                
+                valid_preferences.append(normalized_pref)
+                
+            except Exception as e:
+                logger.warning(f"Error processing preference document: {e}")
+                continue
+        
+        logger.info(f"Successfully processed {len(valid_preferences)} valid preferences")
+        
+        # Calculate summary
+        total_students = len(valid_preferences)
+        confirmed_students = sum(1 for p in valid_preferences if p['status'] == "confirmed")
+        draft_students = total_students - confirmed_students
+        completion_rate = (confirmed_students / total_students * 100) if total_students > 0 else 0
+        
+        # Initialize data structures
+        course_demand = {}
+        category_analysis = {}
+        student_details = []
+        
+        # Categories to analyze
+        categories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM', 'Honors', 'Minor']
+        
+        # Initialize category structures
+        for category in categories:
+            course_demand[category] = {}
+            category_analysis[category] = {
+                "students_submitted": 0,
+                "total_first_choices": 0,
+                "total_second_choices": 0,
+                "courses_with_demand": 0,
+                "most_popular_first": None,
+                "most_popular_second": None
+            }
+        
+        # Track course popularity
+        category_stats = {cat: {"choice1": {}, "choice2": {}} for cat in categories}
+        
+        # Process each student
+        for pref in valid_preferences:
+            try:
+                # Process student details
+                student_prefs = {}
+                total_preferences = 0
+                
+                pref_data = pref.get('preferences', {})
+                
+                for category in categories:
+                    choices = pref_data.get(category, {})
+                    if not isinstance(choices, dict):
+                        choices = {}
+                    
+                    choice1 = str(choices.get("choice1", "")).strip()
+                    choice2 = str(choices.get("choice2", "")).strip()
+                    
+                    student_prefs[category] = {
+                        "choice1": {"id": choice1, "name": get_course_name(choice1) if choice1 else ""},
+                        "choice2": {"id": choice2, "name": get_course_name(choice2) if choice2 else ""}
+                    }
+                    
+                    # Count total preferences
+                    if choice1 or choice2:
+                        total_preferences += 1
+                    
+                    # Track course demand
+                    if choice1:
+                        # Initialize course demand structure
+                        if category not in course_demand:
+                            course_demand[category] = {}
+                        if choice1 not in course_demand[category]:
+                            course_demand[category][choice1] = {
+                                "course_name": get_course_name(choice1),
+                                "first_choice_count": 0,
+                                "second_choice_count": 0,
+                                "total_demand": 0,
+                                "students_first_choice": [],
+                                "students_second_choice": []
+                            }
+                        
+                        course_demand[category][choice1]["first_choice_count"] += 1
+                        course_demand[category][choice1]["total_demand"] += 1
+                        course_demand[category][choice1]["students_first_choice"].append({
+                            "student_id": pref['roll_number'],
+                            "name": pref['name']
+                        })
+                        
+                        # Category stats
+                        category_stats[category]["choice1"][choice1] = category_stats[category]["choice1"].get(choice1, 0) + 1
+                        category_analysis[category]["total_first_choices"] += 1
+                    
+                    if choice2:
+                        # Initialize course demand structure
+                        if category not in course_demand:
+                            course_demand[category] = {}
+                        if choice2 not in course_demand[category]:
+                            course_demand[category][choice2] = {
+                                "course_name": get_course_name(choice2),
+                                "first_choice_count": 0,
+                                "second_choice_count": 0,
+                                "total_demand": 0,
+                                "students_first_choice": [],
+                                "students_second_choice": []
+                            }
+                        
+                        course_demand[category][choice2]["second_choice_count"] += 1
+                        course_demand[category][choice2]["total_demand"] += 1
+                        course_demand[category][choice2]["students_second_choice"].append({
+                            "student_id": pref['roll_number'],
+                            "name": pref['name']
+                        })
+                        
+                        # Category stats
+                        category_stats[category]["choice2"][choice2] = category_stats[category]["choice2"].get(choice2, 0) + 1
+                        category_analysis[category]["total_second_choices"] += 1
+                
+                # Add student details
+                student_details.append({
+                    "student_id": pref['roll_number'],
+                    "name": pref['name'],
+                    "status": pref['status'],
+                    "total_preferences": total_preferences,
+                    "preferences": student_prefs
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing student {pref.get('roll_number', 'unknown')}: {e}")
+                continue
+        
+        # Calculate category analysis
+        for category in categories:
+            choice1_data = category_stats[category]["choice1"]
+            choice2_data = category_stats[category]["choice2"]
+            
+            # Students who submitted this category
+            students_with_first = len(choice1_data)
+            students_with_second = len(choice2_data)
+            students_with_choices = max(students_with_first, students_with_second)
+            
+            category_analysis[category]["students_submitted"] = students_with_choices
+            category_analysis[category]["courses_with_demand"] = len(set(list(choice1_data.keys()) + list(choice2_data.keys())))
+            
+            # Most popular courses
+            if choice1_data:
+                most_popular_first = max(choice1_data.items(), key=lambda x: x[1])
+                category_analysis[category]["most_popular_first"] = {
+                    "course_id": most_popular_first[0],
+                    "course_name": get_course_name(most_popular_first[0]),
+                    "count": most_popular_first[1]
+                }
+            
+            if choice2_data:
+                most_popular_second = max(choice2_data.items(), key=lambda x: x[1])
+                category_analysis[category]["most_popular_second"] = {
+                    "course_id": most_popular_second[0],
+                    "course_name": get_course_name(most_popular_second[0]),
+                    "count": most_popular_second[1]
+                }
+        
+        response_data = {
+            "summary": {
+                "total_students": total_students,
+                "confirmed_students": confirmed_students,
+                "draft_students": draft_students,
+                "completion_rate": round(completion_rate, 2)
             },
-            "course_popularity": {},
-            "category_stats": {}
+            "course_demand": course_demand,
+            "category_analysis": category_analysis,
+            "student_details": student_details
         }
         
-        course_counts = {}
-        category_counts = {}
-        
-        for pref in all_preferences:
-            for category, choices in pref.preferences.items():
-                if category not in category_counts:
-                    category_counts[category] = {"choice1": {}, "choice2": {}}
-                
-                if isinstance(choices, dict):
-                    # Count choice1
-                    choice1 = choices.get("choice1", "").strip()
-                    if choice1:
-                        course_counts[choice1] = course_counts.get(choice1, 0) + 1
-                        category_counts[category]["choice1"][choice1] = category_counts[category]["choice1"].get(choice1, 0) + 1
-                    
-                    # Count choice2
-                    choice2 = choices.get("choice2", "").strip()
-                    if choice2:
-                        course_counts[choice2] = course_counts.get(choice2, 0) + 1
-                        category_counts[category]["choice2"][choice2] = category_counts[category]["choice2"].get(choice2, 0) + 1
-        
-        # Sort by popularity
-        analysis["course_popularity"] = dict(sorted(course_counts.items(), key=lambda x: x[1], reverse=True))
-        analysis["category_stats"] = category_counts
-        
-        return analysis
+        logger.info(f"Successfully generated analysis for {total_students} students")
+        return response_data
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching preferences analysis: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Error in preferences analysis: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # ==================== STUDENT STATUS ENDPOINTS ====================
 
 @router.get("/student/{student_id}/status")
 async def get_student_allocation_status(student_id: str):
-    """Get allocation status for a specific student"""
+    """Get allocation status for a specific student (legacy endpoint)"""
     try:
         if not DB_AVAILABLE:
             raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
         
-        # Get student preferences
-        preference = await StudentPreferenceDB.find_one({"student_id": student_id})
+        # Try to find by roll_number first (new way), then by student_id (legacy)
+        preference = await StudentPreferenceDB.find_one({"roll_number": student_id})
+        if not preference:
+            # For backward compatibility, try to find by old student_id field if it exists
+            preference = await StudentPreferenceDB.find_one({"student_id": student_id})
+        
         if not preference:
             raise HTTPException(status_code=404, detail="Student preferences not found")
         
@@ -567,7 +809,8 @@ async def get_student_allocation_status(student_id: str):
         latest_allocation = await AllocationResult.find_one(sort=[("created_at", -1)])
         
         status_info = {
-            "student_id": student_id,
+            "student_id": student_id,  # Keep for backward compatibility
+            "roll_number": preference.roll_number,  # Add roll_number
             "name": preference.name,
             "preference_status": preference.status,
             "allocation_status": "not_allocated",
@@ -576,7 +819,8 @@ async def get_student_allocation_status(student_id: str):
         }
         
         if latest_allocation and latest_allocation.student_allocations:
-            student_allocation = latest_allocation.student_allocations.get(student_id)
+            # Look for allocation by roll_number
+            student_allocation = latest_allocation.student_allocations.get(preference.roll_number)
             if student_allocation:
                 status_info["allocation_status"] = "allocated"
                 status_info["allocated_courses"] = student_allocation
@@ -590,7 +834,108 @@ async def get_student_allocation_status(student_id: str):
         logger.error(f"Error fetching student status: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# ==================== DOWNLOAD/REPORT ENDPOINTS ====================
+# Add new legacy endpoints for old student_id based operations
+@router.get("/preferences/{student_id}")
+async def get_student_preferences_legacy(student_id: str):
+    """Get student preferences by student_id (legacy endpoint)"""
+    try:
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        # Try roll_number first, then student_id for backward compatibility
+        preference = await StudentPreferenceDB.find_one({"roll_number": student_id})
+        if not preference:
+            preference = await StudentPreferenceDB.find_one({"student_id": student_id})
+        
+        if not preference:
+            raise HTTPException(status_code=404, detail="Preferences not found")
+        
+        return {
+            "student_id": student_id,  # Keep for backward compatibility
+            "roll_number": preference.roll_number,
+            "name": preference.name,
+            "preferences": preference.preferences,
+            "status": preference.status,
+            "comments": preference.comments,
+            "created_at": preference.created_at,
+            "updated_at": preference.updated_at
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching preferences: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/preferences/{student_id}/confirm")
+async def confirm_student_preferences_legacy(
+    student_id: str,
+    request_data: Dict[str, Any]
+):
+    """Confirm student preferences by student_id (legacy endpoint)"""
+    try:
+        if not DB_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Database service temporarily unavailable")
+        
+        logger.info(f"Confirming preferences for student {student_id} (legacy)")
+        
+        # Try to find by roll_number first, then student_id
+        existing = await StudentPreferenceDB.find_one({"roll_number": student_id})
+        if not existing:
+            existing = await StudentPreferenceDB.find_one({"student_id": student_id})
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail="Student preferences not found")
+        
+        # Process preferences
+        processed_preferences = {}
+        raw_preferences = request_data.get("preferences", {})
+        
+        for category in CourseCategory:
+            category_key = category.value
+            category_data = raw_preferences.get(category_key, {})
+            
+            if isinstance(category_data, dict):
+                processed_preferences[category_key] = {
+                    "choice1": str(category_data.get("choice1") or "").strip(),
+                    "choice2": str(category_data.get("choice2") or "").strip()
+                }
+            else:
+                processed_preferences[category_key] = {
+                    "choice1": "",
+                    "choice2": ""
+                }
+
+        confirmation_data = {
+            "roll_number": existing.roll_number,  # Use existing roll_number
+            "name": request_data.get("name", existing.name),
+            "preferences": processed_preferences,
+            "confirm": request_data.get("confirm", False),
+            "comments": request_data.get("comments", ""),
+            "status": "confirmed" if request_data.get("confirm") else "draft",
+            "updated_at": datetime.utcnow()
+        }
+
+        # Validate the confirmation
+        validated_confirmation = PreferenceConfirmation(**confirmation_data)
+
+        # Update database
+        existing.preferences = validated_confirmation.preferences
+        existing.status = validated_confirmation.status
+        existing.comments = validated_confirmation.comments
+        existing.updated_at = datetime.utcnow()
+        await existing.save()
+
+        return {
+            "message": "Preferences confirmed successfully" if validated_confirmation.confirm else "Preferences saved as draft",
+            "status": existing.status
+        }
+
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error confirming preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/download/{allocation_id}")
 async def download_allocation_report(
@@ -615,24 +960,26 @@ async def download_allocation_report(
         
         logger.info(f"Found allocation with {len(allocation_db.student_allocations)} students")
         
-        # Convert database model to API model for report generation
+        # Convert database model to API model for report generation - USE ROLL_NUMBER
         student_allocations = []
-        for student_id, allocations in allocation_db.student_allocations.items():
-            # Get student name from preferences
+        for roll_number, allocations in allocation_db.student_allocations.items():
+            # Get student name from preferences using roll_number
             try:
-                student_pref = await StudentPreferenceDB.find_one({"student_id": student_id})
-                student_name = student_pref.name if student_pref else f"Student {student_id}"
+                student_pref = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+                student_name = student_pref.name if student_pref else f"Student {roll_number}"
             except Exception as e:
-                logger.warning(f"Could not get name for student {student_id}: {e}")
-                student_name = f"Student {student_id}"
+                logger.warning(f"Could not get name for student {roll_number}: {e}")
+                student_name = f"Student {roll_number}"
             
             student_allocation = StudentAllocation(
-                student_id=student_id,
+                roll_number=roll_number,  # Make sure this is set correctly
                 name=student_name,
                 allocations=allocations,
                 issues=[]  # Issues are stored at allocation level
             )
             student_allocations.append(student_allocation)
+
+        logger.info(f"Created {len(student_allocations)} student allocations for report")
         
         # Convert course enrollments to course summaries
         course_summaries = {}
@@ -641,7 +988,7 @@ async def download_allocation_report(
                 course_id=course_id,
                 name=get_course_name(course_id),
                 enrolled=len(students),
-                students=students,
+                students=students,  # These should now be roll_numbers
                 min_enrollment=20  # Default minimum enrollment
             )
             course_summaries[course_id] = course_enrollment
@@ -670,7 +1017,6 @@ async def download_allocation_report(
         
         # Generate report using the corrected function call
         try:
-            # Call the report generation function with proper arguments
             from services.report import generate_simple_allocation_report
             
             generated_file_path = generate_simple_allocation_report(
@@ -739,6 +1085,25 @@ def get_course_name(course_id: str) -> str:
         '25PEC13CE16': 'HMI',
         '25PEC13CE17': 'Geographical Information Systems',
         
+        # Open Electives
+        'OE1': 'Advanced Microprocessor',
+        'OE2': 'Internet of Things',
+        'OE3': 'E-Vehicle',
+        'OE4': 'Supply Chain Management',
+        'OE5': 'Design of Experiments',
+        'OE6': '3D Printing',
+        
+        # Honors
+        'H1': 'IoT Honors',
+        'H2': 'AI/ML Honors', 
+        'H3': 'Data Science Honors',
+        'H4': 'Blockchain Honors',
+        'H5': 'Cybersecurity Honors',
+        
+        # Minor
+        'M1': 'Robotics Minor',
+        'M2': '3D Printing Minor',
+        
         # MDM
         'MDM1': 'Emotional and Spiritual Intelligence',
         'MDM2': 'Health, Wellness and Psychology'
@@ -775,3 +1140,115 @@ async def test_endpoint():
             "GET /api/download/{allocation_id} - Download reports"
         ]
     }
+
+@router.post("/preferences/confirm-final")
+async def confirm_final(current_user: User = Depends(get_current_student)):
+    """Confirm preferences - simple endpoint"""
+    try:
+        roll_number = current_user.roll_number
+        logger.info(f"=== FINAL CONFIRMATION for {roll_number} ===")
+        
+        student = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        logger.info(f"Current status: {student.status}")
+        
+        student.status = "confirmed"
+        student.updated_at = datetime.utcnow()
+        await student.save()
+        
+        logger.info(f"=== SUCCESS: Status changed to CONFIRMED for {roll_number} ===")
+        
+        return {
+            "message": "Preferences confirmed successfully", 
+            "status": "confirmed",
+            "roll_number": roll_number
+        }
+        
+    except Exception as e:
+        logger.error(f"Error confirming final: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/preferences/save-draft")
+async def save_draft(current_user: User = Depends(get_current_student)):
+    """Save as draft - simple endpoint"""
+    try:
+        roll_number = current_user.roll_number
+        logger.info(f"=== SAVING AS DRAFT for {roll_number} ===")
+        
+        student = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        student.status = "draft"
+        student.updated_at = datetime.utcnow()
+        await student.save()
+        
+        logger.info(f"=== SUCCESS: Status changed to DRAFT for {roll_number} ===")
+        
+        return {
+            "message": "Preferences saved as draft", 
+            "status": "draft",
+            "roll_number": roll_number
+        }
+        
+    except Exception as e:
+        logger.error(f"Error saving draft: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ADD this direct MongoDB update endpoint:
+@router.post("/preferences/direct-confirm")
+async def direct_confirm(current_user: User = Depends(get_current_student)):
+    """Direct MongoDB update - bypasses all validation"""
+    try:
+        roll_number = current_user.roll_number
+        
+        # Direct MongoDB update
+        from motor.motor_asyncio import AsyncIOMotorClient
+        import os
+        
+        client = AsyncIOMotorClient(os.getenv("MONGODB_URL", "mongodb://localhost:27017"))
+        db = client.course_allocation
+        
+        result = await db.student_preferences.update_one(
+            {"roll_number": roll_number},
+            {"$set": {"status": "confirmed", "updated_at": datetime.utcnow()}}
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"DIRECT UPDATE SUCCESS: {roll_number} status = confirmed")
+            return {"message": "Confirmed successfully", "status": "confirmed"}
+        else:
+            raise HTTPException(status_code=404, detail="Student not found")
+            
+    except Exception as e:
+        logger.error(f"Direct update error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ADD this new endpoint:
+@router.post("/preferences/set-confirmed")
+async def set_confirmed(current_user: User = Depends(get_current_student)):
+    """Dedicated endpoint to confirm preferences"""
+    try:
+        roll_number = current_user.roll_number
+        logger.info(f"SETTING CONFIRMED STATUS for {roll_number}")
+        
+        student = await StudentPreferenceDB.find_one({"roll_number": roll_number})
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        student.status = "confirmed"
+        student.updated_at = datetime.utcnow()
+        await student.save()
+        
+        logger.info(f"SUCCESS: Status is now CONFIRMED for {roll_number}")
+        
+        return {
+            "message": "Preferences confirmed successfully",
+            "status": "confirmed"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

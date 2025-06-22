@@ -40,11 +40,15 @@ function PreferenceAnalysis() {
     preferenceSuccess: {
       firstChoice: 0,
       secondChoice: 0,
-      alternative: 0
+      alternative: 0,
+      firstChoiceRate: 0,
+      secondChoiceRate: 0,
+      alternativeRate: 0
     },
     categoryStats: {},
     coursePopularity: {},
-    satisfactionScore: 0
+    satisfactionScore: 0,
+    formulas: {}
   })
 
   useEffect(() => {
@@ -77,9 +81,12 @@ function PreferenceAnalysis() {
     const studentAllocations = allocation.student_allocations
     const totalStudents = Object.keys(studentAllocations).length
     
+    if (totalStudents === 0) return
+    
     let firstChoiceCount = 0
     let secondChoiceCount = 0
     let alternativeCount = 0
+    let totalAllocatedCourses = 0
     
     const categoryStats = {}
     const coursePopularity = {}
@@ -92,7 +99,12 @@ function PreferenceAnalysis() {
         firstChoice: 0,
         secondChoice: 0,
         alternative: 0,
-        courses: {}
+        totalStudentsWithPrefs: 0,
+        courses: {},
+        firstChoiceRate: 0,
+        secondChoiceRate: 0,
+        alternativeRate: 0,
+        allocationRate: 0
       }
     })
 
@@ -104,6 +116,7 @@ function PreferenceAnalysis() {
         if (!categoryStats[category]) return
         
         categoryStats[category].allocated++
+        totalAllocatedCourses++
         
         // Track course popularity
         if (!coursePopularity[courseId]) {
@@ -127,6 +140,9 @@ function PreferenceAnalysis() {
           const choice1 = prefs.choice1?.id
           const choice2 = prefs.choice2?.id
           
+          // Count students who had preferences for this category
+          categoryStats[category].totalStudentsWithPrefs++
+          
           if (courseId === choice1) {
             firstChoiceCount++
             categoryStats[category].firstChoice++
@@ -137,26 +153,69 @@ function PreferenceAnalysis() {
             alternativeCount++
             categoryStats[category].alternative++
           }
+        } else {
+          // Student had no preference for this category but got allocated
+          alternativeCount++
+          categoryStats[category].alternative++
         }
       })
     })
 
-    const satisfactionScore = totalStudents > 0 
-      ? ((firstChoiceCount * 100 + secondChoiceCount * 70 + alternativeCount * 40) / (totalStudents * 100))
-      : 0
+    // CORRECTED CALCULATIONS WITH FORMULAS - ALL CAPPED AT 100%
+
+    // Formula 1: First Choice Success Rate (capped at 100%)
+    const firstChoiceSuccessRate = Math.min(100, (firstChoiceCount / totalStudents) * 100)
+
+    // Formula 2: Second Choice Success Rate (capped at 100%)
+    const secondChoiceSuccessRate = Math.min(100, (secondChoiceCount / totalStudents) * 100)
+
+    // Formula 3: Alternative Allocation Rate (capped at 100%)
+    const alternativeRate = Math.min(100, (alternativeCount / totalStudents) * 100)
+
+    // Formula 4: Overall Allocation Rate (capped at 100%)
+    const confirmedStudents = preferences.summary?.confirmed_students || totalStudents
+    const allocationRate = Math.min(100, (totalStudents / confirmedStudents) * 100)
+
+    // Formula 5: Satisfaction Score - Weighted Average (capped at 100%)
+    const maxPossibleScore = totalStudents * 100 // If everyone got 1st choice
+    const actualScore = (firstChoiceCount * 100) + (secondChoiceCount * 70) + (alternativeCount * 40)
+    const satisfactionScore = Math.min(100, (actualScore / maxPossibleScore) * 100)
+
+    // Calculate category-wise success rates (all capped at 100%)
+    Object.keys(categoryStats).forEach(category => {
+      const stats = categoryStats[category]
+      const categoryTotal = stats.allocated
+      
+      if (categoryTotal > 0) {
+        stats.firstChoiceRate = Math.min(100, (stats.firstChoice / categoryTotal) * 100)
+        stats.secondChoiceRate = Math.min(100, (stats.secondChoice / categoryTotal) * 100)
+        stats.alternativeRate = Math.min(100, (stats.alternative / categoryTotal) * 100)
+        stats.allocationRate = Math.min(100, (categoryTotal / totalStudents) * 100)
+      }
+    })
 
     setAnalytics({
       totalStudents,
       totalAllocated: totalStudents,
-      allocationRate: (totalStudents / (preferences.summary?.confirmed_students || 1)) * 100,
+      allocationRate: Math.round(allocationRate * 100) / 100, // Round to 2 decimal places
       preferenceSuccess: {
         firstChoice: firstChoiceCount,
         secondChoice: secondChoiceCount,
-        alternative: alternativeCount
+        alternative: alternativeCount,
+        firstChoiceRate: Math.round(firstChoiceSuccessRate * 100) / 100,
+        secondChoiceRate: Math.round(secondChoiceSuccessRate * 100) / 100,
+        alternativeRate: Math.round(alternativeRate * 100) / 100
       },
       categoryStats,
       coursePopularity,
-      satisfactionScore: satisfactionScore * 100
+      satisfactionScore: Math.round(satisfactionScore * 100) / 100, // Capped and rounded
+      formulas: {
+        firstChoiceSuccess: `(${firstChoiceCount} ÷ ${totalStudents}) × 100 = ${Math.round(firstChoiceSuccessRate * 100) / 100}%`,
+        secondChoiceSuccess: `(${secondChoiceCount} ÷ ${totalStudents}) × 100 = ${Math.round(secondChoiceSuccessRate * 100) / 100}%`,
+        satisfactionScore: `[(${firstChoiceCount} × 100) + (${secondChoiceCount} × 70) + (${alternativeCount} × 40)] ÷ (${totalStudents} × 100) × 100 = ${Math.round(satisfactionScore * 100) / 100}%`,
+        allocationRate: `(${totalStudents} ÷ ${confirmedStudents}) × 100 = ${Math.round(allocationRate * 100) / 100}%`,
+        weightingSystem: "1st Choice = 100 points, 2nd Choice = 70 points, Alternative = 40 points"
+      }
     })
   }
 
@@ -331,7 +390,7 @@ function PreferenceAnalysis() {
         </button>
       </div>
 
-      {/* Key Metrics */}
+      {/* Key Metrics - UPDATED WITH CAPPED PERCENTAGES */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-lg">
           <h3 className="text-sm font-medium opacity-90">Total Students</h3>
@@ -341,26 +400,76 @@ function PreferenceAnalysis() {
         
         <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-lg">
           <h3 className="text-sm font-medium opacity-90">Allocation Rate</h3>
-          <p className="text-3xl font-bold">{analytics.allocationRate.toFixed(1)}%</p>
+          <p className="text-3xl font-bold">{analytics.allocationRate}%</p>
           <p className="text-sm opacity-75">Of Confirmed Students</p>
+          <p className="text-xs opacity-60 mt-1">Max: 100%</p>
         </div>
         
         <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-lg">
           <h3 className="text-sm font-medium opacity-90">1st Choice Success</h3>
-          <p className="text-3xl font-bold">
-            {analytics.totalStudents > 0 
-              ? ((analytics.preferenceSuccess.firstChoice / analytics.totalStudents) * 100).toFixed(1)
-              : 0}%
-          </p>
+          <p className="text-3xl font-bold">{analytics.preferenceSuccess.firstChoiceRate}%</p>
           <p className="text-sm opacity-75">{analytics.preferenceSuccess.firstChoice} Students</p>
+          <p className="text-xs opacity-60 mt-1">Max: 100%</p>
         </div>
         
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-6 rounded-lg">
           <h3 className="text-sm font-medium opacity-90">Satisfaction Score</h3>
-          <p className="text-3xl font-bold">{analytics.satisfactionScore.toFixed(1)}%</p>
-          <p className="text-sm opacity-75">Overall Happiness</p>
+          <p className="text-3xl font-bold">{analytics.satisfactionScore}%</p>
+          <p className="text-sm opacity-75">Weighted Average</p>
+          <p className="text-xs opacity-60 mt-1">Max: 100%</p>
         </div>
       </div>
+
+      {/* Formula Explanation Section */}
+      {analytics.formulas && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 Calculation Formulas Used</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="space-y-3">
+              <div>
+                <span className="font-medium text-green-700">First Choice Success Rate:</span>
+                <div className="text-gray-600 font-mono text-xs mt-1 bg-white p-2 rounded border">
+                  {analytics.formulas.firstChoiceSuccess}
+                </div>
+              </div>
+              <div>
+                <span className="font-medium text-blue-700">Second Choice Success Rate:</span>
+                <div className="text-gray-600 font-mono text-xs mt-1 bg-white p-2 rounded border">
+                  {analytics.formulas.secondChoiceSuccess}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <span className="font-medium text-purple-700">Satisfaction Score (Weighted):</span>
+                <div className="text-gray-600 font-mono text-xs mt-1 bg-white p-2 rounded border">
+                  {analytics.formulas.satisfactionScore}
+                </div>
+                <div className="text-xs text-purple-600 mt-1">
+                  {analytics.formulas.weightingSystem}
+                </div>
+              </div>
+              <div>
+                <span className="font-medium text-orange-700">Allocation Rate:</span>
+                <div className="text-gray-600 font-mono text-xs mt-1 bg-white p-2 rounded border">
+                  {analytics.formulas.allocationRate}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-blue-50 rounded border-l-4 border-blue-400">
+            <p className="text-sm text-blue-800">
+              <strong>📋 Important Notes:</strong>
+            </p>
+            <ul className="text-sm text-blue-700 mt-2 space-y-1 pl-4">
+              <li>• All percentages are automatically <strong>capped at 100% maximum</strong></li>
+              <li>• Satisfaction Score uses weighted scoring for preference quality</li>
+              <li>• Higher scores indicate better allocation success</li>
+              <li>• All calculations are rounded to 2 decimal places</li>
+            </ul>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow">
@@ -412,7 +521,7 @@ function PreferenceAnalysis() {
                 </div>
               </div>
 
-              {/* Summary Stats */}
+              {/* Summary Stats - UPDATED WITH CAPPED PERCENTAGES */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center">
@@ -422,9 +531,12 @@ function PreferenceAnalysis() {
                       </svg>
                     </div>
                     <div className="ml-4">
-                      <p className="text-sm font-medium text-green-600">First Choice</p>
+                      <p className="text-sm font-medium text-green-600">First Choice Success</p>
                       <p className="text-2xl font-semibold text-green-900">
-                        {analytics.preferenceSuccess.firstChoice}
+                        {analytics.preferenceSuccess.firstChoiceRate}%
+                      </p>
+                      <p className="text-xs text-green-600">
+                        {analytics.preferenceSuccess.firstChoice} out of {analytics.totalStudents} students
                       </p>
                     </div>
                   </div>
@@ -438,9 +550,12 @@ function PreferenceAnalysis() {
                       </svg>
                     </div>
                     <div className="ml-4">
-                      <p className="text-sm font-medium text-blue-600">Second Choice</p>
-                      <p className="text-2xl font-semibold text-blue-900">
-                        {analytics.preferenceSuccess.secondChoice}
+                      <p className="text-sm font-medium text-blue-600">Second Choice Success</p>
+                      <p className="text-2xl font-bold text-blue-900">
+                        {analytics.preferenceSuccess.secondChoiceRate}%
+                      </p>
+                      <p className="text-xs text-blue-600">
+                        {analytics.preferenceSuccess.secondChoice} out of {analytics.totalStudents} students
                       </p>
                     </div>
                   </div>
@@ -454,9 +569,12 @@ function PreferenceAnalysis() {
                       </svg>
                     </div>
                     <div className="ml-4">
-                      <p className="text-sm font-medium text-orange-600">Alternative</p>
+                      <p className="text-sm font-medium text-orange-600">Alternative Allocation</p>
                       <p className="text-2xl font-semibold text-orange-900">
-                        {analytics.preferenceSuccess.alternative}
+                        {analytics.preferenceSuccess.alternativeRate}%
+                      </p>
+                      <p className="text-xs text-orange-600">
+                        {analytics.preferenceSuccess.alternative} out of {analytics.totalStudents} students
                       </p>
                     </div>
                   </div>
@@ -465,7 +583,7 @@ function PreferenceAnalysis() {
             </div>
           )}
 
-          {/* Preferences Tab */}
+          {/* Preferences Tab - UPDATED WITH CAPPED PERCENTAGES */}
           {activeTab === 'preferences' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -506,10 +624,11 @@ function PreferenceAnalysis() {
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Category-wise Success Rates</h3>
+                  <h3 className="text-lg font-semibold">Category-wise Success Rates (Capped at 100%)</h3>
                   {Object.entries(analytics.categoryStats).map(([category, stats]) => {
                     const total = stats.firstChoice + stats.secondChoice + stats.alternative
-                    const successRate = total > 0 ? ((stats.firstChoice + stats.secondChoice) / total * 100) : 0
+                    // CAPPED SUCCESS RATE CALCULATION
+                    const successRate = total > 0 ? Math.min(100, ((stats.firstChoice + stats.secondChoice) / total * 100)) : 0
                     
                     return (
                       <div key={category} className="border rounded-lg p-4">
@@ -520,21 +639,24 @@ function PreferenceAnalysis() {
                             successRate >= 60 ? 'bg-yellow-100 text-yellow-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {successRate.toFixed(1)}% Success
+                            {successRate.toFixed(1)}% Success (Max: 100%)
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
                           <div className="text-center">
                             <div className="text-green-600 font-semibold">{stats.firstChoice}</div>
                             <div className="text-gray-500">1st Choice</div>
+                            <div className="text-xs text-gray-400">{stats.firstChoiceRate}%</div>
                           </div>
                           <div className="text-center">
                             <div className="text-blue-600 font-semibold">{stats.secondChoice}</div>
                             <div className="text-gray-500">2nd Choice</div>
+                            <div className="text-xs text-gray-400">{stats.secondChoiceRate}%</div>
                           </div>
                           <div className="text-center">
                             <div className="text-orange-600 font-semibold">{stats.alternative}</div>
                             <div className="text-gray-500">Alternative</div>
+                            <div className="text-xs text-gray-400">{stats.alternativeRate}%</div>
                           </div>
                         </div>
                       </div>
@@ -565,6 +687,10 @@ function PreferenceAnalysis() {
                         <span className="font-medium">{stats.allocated}</span>
                       </div>
                       <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Allocation Rate:</span>
+                        <span className="font-medium">{stats.allocationRate}% (Max: 100%)</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Unique Courses:</span>
                         <span className="font-medium">{Object.keys(stats.courses).length}</span>
                       </div>
@@ -589,7 +715,7 @@ function PreferenceAnalysis() {
             </div>
           )}
 
-          {/* Popular Courses Tab */}
+          {/* Popular Courses Tab - UPDATED WITH CAPPED PERCENTAGES */}
           {activeTab === 'courses' && (
             <div className="space-y-6">
               <div className="bg-white border rounded-lg p-4">
@@ -625,13 +751,14 @@ function PreferenceAnalysis() {
                 </div>
 
                 <div className="bg-white border rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-4">Category Performance</h3>
+                  <h3 className="text-lg font-semibold mb-4">Category Performance (All Capped at 100%)</h3>
                   <div className="space-y-4">
                     {Object.entries(analytics.categoryStats)
                       .sort(([,a], [,b]) => b.allocated - a.allocated)
                       .map(([category, stats]) => {
                         const total = stats.allocated
-                        const successRate = total > 0 ? ((stats.firstChoice + stats.secondChoice) / total * 100) : 0
+                        // CAPPED SUCCESS RATE
+                        const successRate = total > 0 ? Math.min(100, ((stats.firstChoice + stats.secondChoice) / total * 100)) : 0
                         
                         return (
                           <div key={category} className="border-l-4 border-blue-500 pl-4">
@@ -641,13 +768,13 @@ function PreferenceAnalysis() {
                             </div>
                             <div className="mt-1">
                               <div className="flex justify-between text-xs text-gray-600">
-                                <span>Success Rate: {successRate.toFixed(1)}%</span>
+                                <span>Success Rate: {successRate.toFixed(1)}% (Max: 100%)</span>
                                 <span>Courses: {Object.keys(stats.courses).length}</span>
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
                                 <div 
                                   className="bg-blue-600 h-2 rounded-full" 
-                                  style={{ width: `${successRate}%` }}
+                                  style={{ width: `${Math.min(100, successRate)}%` }}
                                 ></div>
                               </div>
                             </div>

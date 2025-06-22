@@ -1,23 +1,26 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
-import { getStudentAllocationStatus } from '../../services/api'
+import { useAuth } from '../../hooks/useAuth'
+import { getMyAllocationStatus } from '../../services/api'  // Use authenticated endpoint
 
 function Status() {
+  const { user } = useAuth()  // Get authenticated user
   const [statusData, setStatusData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [studentId, setStudentId] = useState('')
 
   useEffect(() => {
-    // Get student ID from localStorage, URL params, or user input
-    const storedStudentId = localStorage.getItem('studentId') || 'STU1001' // Default for testing
-    setStudentId(storedStudentId)
-    fetchAllocationStatus(storedStudentId)
-  }, [])
+    if (user && user.roll_number) {
+      fetchAllocationStatus()
+    } else {
+      setLoading(false)
+    }
+  }, [user])
 
-  const fetchAllocationStatus = async (id) => {
+  const fetchAllocationStatus = async () => {
     try {
       setLoading(true)
-      const data = await getStudentAllocationStatus(id)
+      // Use the authenticated endpoint instead of manual student ID
+      const data = await getMyAllocationStatus()
       setStatusData(data)
     } catch (error) {
       toast.error(error.message || 'Failed to fetch allocation status')
@@ -69,13 +72,16 @@ function Status() {
     }
   }
 
-  const handleStudentIdChange = (e) => {
-    const newId = e.target.value
-    setStudentId(newId)
-    if (newId.length >= 6) {
-      localStorage.setItem('studentId', newId)
-      fetchAllocationStatus(newId)
-    }
+  // Show login prompt if not authenticated
+  if (!user) {
+    return (
+      <div className="max-w-4xl mx-auto py-6 px-4">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <h2 className="text-xl font-semibold text-yellow-800 mb-2">Authentication Required</h2>
+          <p className="text-yellow-700">Please log in to view your allocation status.</p>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
@@ -88,30 +94,22 @@ function Status() {
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4">
-      {/* Student ID Input */}
-      <div className="mb-6">
-        <label htmlFor="studentId" className="block text-sm font-medium text-gray-700 mb-2">
-          Student ID
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            id="studentId"
-            value={studentId}
-            onChange={handleStudentIdChange}
-            placeholder="Enter your Student ID (e.g., STU1001)"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* Student Info Header */}
+      <div className="mb-6 bg-white rounded-lg shadow p-4">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">My Allocation Status</h1>
+        <div className="flex items-center gap-4 text-sm text-gray-600">
+          <span><strong>Roll Number:</strong> {user.roll_number}</span>
+          <span><strong>Email:</strong> {user.email}</span>
           <button
-            onClick={() => fetchAllocationStatus(studentId)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={fetchAllocationStatus}
+            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
           >
-            Check Status
+            Refresh Status
           </button>
         </div>
       </div>
 
-      {statusData && (
+      {statusData ? (
         <>
           {/* Overall Status */}
           <div className={`rounded-lg p-6 mb-6 ${getStatusColor(statusData.status)}`}>
@@ -120,7 +118,6 @@ function Status() {
                 <h2 className="text-2xl font-bold mb-2">
                   Allocation Status: {getStatusMessage(statusData.status)}
                 </h2>
-                <p className="text-sm opacity-80">{statusData.message}</p>
                 {statusData.submission_status && (
                   <p className="text-sm mt-1">
                     Preferences Status: <span className="font-medium">
@@ -139,7 +136,7 @@ function Status() {
           </div>
 
           {/* Course Allocations */}
-          {Object.keys(statusData.allocations).length > 0 ? (
+          {Object.keys(statusData.allocations || {}).length > 0 ? (
             <div className="space-y-4">
               <h3 className="text-xl font-semibold">Your Course Allocations</h3>
               
@@ -178,37 +175,6 @@ function Status() {
                           )}
                         </div>
                       </div>
-
-                      {/* Show Original Preferences */}
-                      {allocation?.original_preferences && (
-                        <div className="mt-3 pt-3 border-t border-gray-100">
-                          <p className="text-xs text-gray-500 mb-2">Your Original Preferences:</p>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                            {allocation.original_preferences.choice1.id && (
-                              <div className={`p-2 rounded ${
-                                allocation.course_id === allocation.original_preferences.choice1.id 
-                                  ? 'bg-green-50 border border-green-200' 
-                                  : 'bg-gray-50'
-                              }`}>
-                                <span className="font-medium">1st Choice:</span>
-                                <p className="truncate">{allocation.original_preferences.choice1.name}</p>
-                                <p className="text-gray-500">({allocation.original_preferences.choice1.id})</p>
-                              </div>
-                            )}
-                            {allocation.original_preferences.choice2.id && (
-                              <div className={`p-2 rounded ${
-                                allocation.course_id === allocation.original_preferences.choice2.id 
-                                  ? 'bg-blue-50 border border-blue-200' 
-                                  : 'bg-gray-50'
-                              }`}>
-                                <span className="font-medium">2nd Choice:</span>
-                                <p className="truncate">{allocation.original_preferences.choice2.name}</p>
-                                <p className="text-gray-500">({allocation.original_preferences.choice2.id})</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )
                 })}
@@ -246,37 +212,6 @@ function Status() {
                               )}
                             </div>
                           </div>
-
-                          {/* Show Original Preferences for Optional Courses */}
-                          {allocation.original_preferences && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <p className="text-xs text-gray-500 mb-2">Your Original Preferences:</p>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                                {allocation.original_preferences.choice1.id && (
-                                  <div className={`p-2 rounded ${
-                                    allocation.course_id === allocation.original_preferences.choice1.id 
-                                      ? 'bg-green-50 border border-green-200' 
-                                      : 'bg-gray-50'
-                                  }`}>
-                                    <span className="font-medium">1st Choice:</span>
-                                    <p className="truncate">{allocation.original_preferences.choice1.name}</p>
-                                    <p className="text-gray-500">({allocation.original_preferences.choice1.id})</p>
-                                  </div>
-                                )}
-                                {allocation.original_preferences.choice2.id && (
-                                  <div className={`p-2 rounded ${
-                                    allocation.course_id === allocation.original_preferences.choice2.id 
-                                      ? 'bg-blue-50 border border-blue-200' 
-                                      : 'bg-gray-50'
-                                  }`}>
-                                    <span className="font-medium">2nd Choice:</span>
-                                    <p className="truncate">{allocation.original_preferences.choice2.name}</p>
-                                    <p className="text-gray-500">({allocation.original_preferences.choice2.id})</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )
                     })}
@@ -316,6 +251,24 @@ function Status() {
             </ul>
           </div>
         </>
+      ) : (
+        <div className="bg-white rounded-lg shadow p-6 text-center">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No Status Data Available</h3>
+          <p className="text-gray-600 mb-4">
+            Unable to load your allocation status. This could be because:
+          </p>
+          <ul className="text-sm text-gray-600 mb-4 space-y-1">
+            <li>• You haven't submitted your preferences yet</li>
+            <li>• Your preferences haven't been processed</li>
+            <li>• There's a temporary system issue</li>
+          </ul>
+          <button
+            onClick={fetchAllocationStatus}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Try Again
+          </button>
+        </div>
       )}
     </div>
   )

@@ -55,7 +55,6 @@ export const authAPI = {
     try {
       console.log('Attempting login with credentials:', credentials);
       
-      // Use /auth/login instead of /api/auth/login
       const response = await api.post('/auth/login', credentials);
       
       console.log('Login response:', response.data);
@@ -79,7 +78,6 @@ export const authAPI = {
     try {
       console.log('Attempting registration with data:', userData);
       
-      // Use /auth/signup instead of /auth/register to match your backend
       const response = await api.post('/auth/signup', userData);
       
       console.log('Registration response:', response.data);
@@ -95,7 +93,6 @@ export const authAPI = {
     try {
       console.log('Attempting signup with data:', userData);
       
-      // Use /auth/signup to match your backend endpoint
       const response = await api.post('/auth/signup', userData);
       
       console.log('Signup response:', response.data);
@@ -108,7 +105,6 @@ export const authAPI = {
 
   getCurrentUser: async () => {
     try {
-      // Use /auth/me instead of /api/auth/me
       const response = await api.get('/auth/me');
       return response.data;
     } catch (error) {
@@ -121,150 +117,6 @@ export const authAPI = {
     tokenManager.removeToken();
     localStorage.removeItem('user');
   }
-};
-
-// Main API - These are at /api
-export const mainAPI = {
-  // Preferences endpoints
-  submitPreferences: async (data) => {
-    const response = await api.post('/api/preferences/submit', data);
-    return response.data;
-  },
-
-  confirmPreferences: async (studentId, data) => {
-    const response = await api.post(`/api/preferences/${studentId}/confirm`, data);
-    return response.data;
-  },
-
-  getPreferences: async (studentId) => {
-    const response = await api.get(`/api/preferences/${studentId}`);
-    return response.data;
-  },
-
-  // Stats endpoints
-  getStats: async () => {
-    const response = await api.get('/api/stats');
-    return response.data;
-  },
-
-  // Admin endpoints
-  getAdminSummary: async () => {
-    const response = await api.get('/api/admin/summary');
-    return response.data;
-  },
-
-  triggerAllocation: async () => {
-    const response = await api.post('/api/allocate');
-    return response.data;
-  },
-
-  getLatestAllocation: async () => {
-    const response = await api.get('/api/allocations/latest');
-    return response.data;
-  },
-
-  // Student status
-  getStudentStatus: async (studentId) => {
-    const response = await api.get(`/api/student/${studentId}/status`);
-    return response.data;
-  }
-};
-
-// MISSING FUNCTIONS - Add these exports for your Dashboard components:
-
-// Stats function (used by Admin Dashboard)
-export const getStats = async () => {
-  try {
-    const response = await api.get('/api/stats');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching stats:', error);
-    throw error;
-  }
-};
-
-// Trigger allocation function (used by Admin Dashboard)
-export const triggerAllocation = async () => {
-  try {
-    const response = await api.post('/api/allocate');
-    return response.data;
-  } catch (error) {
-    console.error('Error triggering allocation:', error);
-    throw error;
-  }
-};
-
-// Download report function (used by Admin Dashboard)
-export const downloadReport = async (allocationId, format = 'excel') => {
-  try {
-    const response = await api.get(`/api/download/${allocationId}`, {
-      params: { format },
-      responseType: 'blob'
-    });
-    
-    // Create download link
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `allocation_report_${allocationId}.${format === 'excel' ? 'xlsx' : 'csv'}`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-    
-    return { success: true };
-  } catch (error) {
-    console.error('Error downloading report:', error);
-    throw error;
-  }
-};
-
-// Student allocation status function (used by Student Dashboard)
-export const getStudentAllocationStatus = async (studentId) => {
-  try {
-    const response = await api.get(`/api/student/${studentId}/status`);
-    
-    // Transform the backend response to match your frontend expectations
-    const data = response.data;
-    
-    return {
-      student_id: data.student_id,
-      name: data.name,
-      status: data.allocation_status, // 'allocated' or 'not_allocated'
-      submission_status: data.preference_status, // 'draft', 'submitted', 'confirmed'
-      allocations: transformAllocations(data.allocated_courses || {}),
-      allocation_date: data.allocation_date
-    };
-  } catch (error) {
-    console.error('Error fetching student allocation status:', error);
-    // Return a default structure if the API fails
-    return {
-      student_id: studentId,
-      name: 'Unknown Student',
-      status: 'not_allocated',
-      submission_status: 'draft',
-      allocations: {},
-      allocation_date: null
-    };
-  }
-};
-
-// Helper function to transform backend allocation data to frontend format
-const transformAllocations = (allocatedCourses) => {
-  const transformedAllocations = {};
-  
-  Object.entries(allocatedCourses).forEach(([category, courseId]) => {
-    if (courseId && courseId.trim()) {
-      transformedAllocations[category] = {
-        course_id: courseId,
-        course_name: getCourseName(courseId),
-        preference_number: 'Allocated', // You might want to get this from backend
-        original_preferences: []
-      };
-    }
-  });
-  
-  return transformedAllocations;
 };
 
 // Helper function to get course names
@@ -321,53 +173,239 @@ const getCourseName = (courseId) => {
   return courseNames[courseId] || courseId;
 };
 
-// Additional utility functions for completeness
+// Helper function to transform backend allocation data to frontend format
+const transformAllocations = (allocatedCourses) => {
+  const transformedAllocations = {};
+  
+  Object.entries(allocatedCourses).forEach(([category, courseId]) => {
+    if (courseId && courseId.trim()) {
+      transformedAllocations[category] = {
+        course_id: courseId,
+        course_name: getCourseName(courseId),
+        preference_number: 'Allocated',
+        original_preferences: []
+      };
+    }
+  });
+  
+  return transformedAllocations;
+};
+
+// PREFERENCES API - Updated for authentication
 export const submitPreferences = async (data) => {
-  return mainAPI.submitPreferences(data);
+  try {
+    // Remove roll_number from data since it comes from authentication
+    const { roll_number, ...preferencesData } = data;
+    const response = await api.post('/api/preferences/submit', preferencesData);
+    return response.data;
+  } catch (error) {
+    console.error('Error submitting preferences:', error);
+    throw error;
+  }
 };
 
-export const confirmPreferences = async (studentId, data) => {
-  return mainAPI.confirmPreferences(studentId, data);
+export const confirmPreferences = async (data) => {
+  try {
+    console.log('=== API CALL confirmPreferences ===');
+    console.log('Input data:', data);
+    
+    // Simple request - just send the confirm flag and comments
+    const requestPayload = {
+      confirm: Boolean(data.confirm),  // Ensure boolean
+      comments: data.comments || ""
+    };
+    
+    console.log('Request payload:', requestPayload);
+    
+    const response = await api.post('/api/preferences/confirm', requestPayload);
+    
+    console.log('API response:', response.data);
+    
+    return response.data;
+  } catch (error) {
+    console.error('API Error:', error);
+    console.error('Error response:', error.response?.data);
+    throw error;
+  }
 };
 
+export const confirmPreferencesFinal = async () => {
+  try {
+    console.log('Calling confirm-final endpoint');
+    const response = await api.post('/api/preferences/confirm-final');
+    return response.data;
+  } catch (error) {
+    console.error('Error confirming final:', error);
+    throw error;
+  }
+};
+
+export const saveDraft = async () => {
+  try {
+    console.log('Calling save-draft endpoint');
+    const response = await api.post('/api/preferences/save-draft');
+    return response.data;
+  } catch (error) {
+    console.error('Error saving draft:', error);
+    throw error;
+  }
+};
+
+export const getMyPreferences = async () => {
+  try {
+    const response = await api.get('/api/preferences/me');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching preferences:', error);
+    throw error;
+  }
+};
+
+// Make sure this function uses the authenticated endpoint
+export const getMyAllocationStatus = async () => {
+  try {
+    console.log('Fetching allocation status for authenticated user');
+    const response = await api.get('/api/student/me/status');  // Uses authentication
+    
+    // Transform the backend response to match your frontend expectations
+    const data = response.data;
+    
+    return {
+      roll_number: data.roll_number,
+      name: data.name,
+      status: data.allocation_status,
+      submission_status: data.preference_status,
+      allocations: transformAllocations(data.allocated_courses || {}),
+      allocation_date: data.allocation_date
+    };
+  } catch (error) {
+    console.error('Error fetching allocation status:', error);
+    throw error;
+  }
+};
+
+// LEGACY API - For backward compatibility (using student IDs)
 export const getPreferences = async (studentId) => {
-  return mainAPI.getPreferences(studentId);
+  try {
+    const response = await api.get(`/api/preferences/${studentId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching preferences by ID:', error);
+    throw error;
+  }
+};
+
+export const getStudentAllocationStatus = async (studentId) => {
+  try {
+    const response = await api.get(`/api/student/${studentId}/status`);
+    
+    // Transform the backend response to match your frontend expectations
+    const data = response.data;
+    
+    return {
+      student_id: data.student_id || data.roll_number, // Handle both formats
+      roll_number: data.roll_number,
+      name: data.name,
+      status: data.allocation_status,
+      submission_status: data.preference_status,
+      allocations: transformAllocations(data.allocated_courses || {}),
+      allocation_date: data.allocation_date
+    };
+  } catch (error) {
+    console.error('Error fetching student allocation status:', error);
+    // Return a default structure if the API fails
+    return {
+      student_id: studentId,
+      roll_number: studentId,
+      name: 'Unknown Student',
+      status: 'not_allocated',
+      submission_status: 'draft',
+      allocations: {},
+      allocation_date: null
+    };
+  }
+};
+
+// ADMIN API
+export const getStats = async () => {
+  try {
+    const response = await api.get('/api/stats');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    throw error;
+  }
+};
+
+export const triggerAllocation = async () => {
+  try {
+    const response = await api.post('/api/allocate');
+    return response.data;
+  } catch (error) {
+    console.error('Error triggering allocation:', error);
+    throw error;
+  }
+};
+
+export const downloadReport = async (allocationId, format = 'excel') => {
+  try {
+    const response = await api.get(`/api/download/${allocationId}`, {
+      params: { format },
+      responseType: 'blob'
+    });
+    
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `allocation_report_${allocationId}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error downloading report:', error);
+    throw error;
+  }
 };
 
 export const getAdminSummary = async () => {
-  return mainAPI.getAdminSummary();
+  try {
+    const response = await api.get('/api/admin/summary');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching admin summary:', error);
+    throw error;
+  }
 };
 
 export const getLatestAllocation = async () => {
-  return mainAPI.getLatestAllocation();
+  try {
+    const response = await api.get('/api/allocations/latest');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching latest allocation:', error);
+    throw error;
+  }
 };
 
-// Preferences analysis function (used by Analytics page)
+// ANALYTICS API
 export const getPreferencesAnalysis = async () => {
   try {
+    console.log('Fetching preferences analysis...');
     const response = await api.get('/api/admin/preferences-analysis');
     
-    // Transform backend response to match frontend expectations
-    const data = response.data;
+    console.log('Preferences analysis response:', response.data);
     
-    // Calculate summary statistics
-    const totalStudents = data.overview?.total_students || 0;
-    const confirmedStudents = data.overview?.confirmed_preferences || 0;
-    const draftStudents = totalStudents - confirmedStudents;
+    // The backend now returns the data in the correct format
+    return response.data;
     
-    return {
-      summary: {
-        total_students: totalStudents,
-        confirmed_students: confirmedStudents,
-        draft_students: draftStudents,
-        completion_rate: totalStudents > 0 ? (confirmedStudents / totalStudents) * 100 : 0
-      },
-      course_demand: transformCourseDemandData(data.course_popularity || {}, data.category_stats || {}),
-      category_analysis: transformCategoryAnalysis(data.category_stats || {}),
-      student_details: await getStudentDetails() // We'll create this helper
-    };
   } catch (error) {
     console.error('Error fetching preferences analysis:', error);
+    console.error('Error details:', error.response?.data);
+    
     // Return default structure if API fails
     return {
       summary: {
@@ -473,7 +511,6 @@ const transformCategoryAnalysis = (categoryStats) => {
 // Helper function to get detailed student data
 const getStudentDetails = async () => {
   try {
-    // This would ideally be a separate API endpoint, but we'll use the summary for now
     const summaryResponse = await api.get('/api/admin/summary');
     const summary = summaryResponse.data;
     
@@ -483,6 +520,18 @@ const getStudentDetails = async () => {
   } catch (error) {
     console.error('Error fetching student details:', error);
     return [];
+  }
+};
+
+// ADD this new function:
+export const setConfirmedStatus = async () => {
+  try {
+    console.log('Calling set-confirmed endpoint');
+    const response = await api.post('/api/preferences/set-confirmed');
+    return response.data;
+  } catch (error) {
+    console.error('Error setting confirmed status:', error);
+    throw error;
   }
 };
 

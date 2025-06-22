@@ -21,7 +21,7 @@ security = HTTPBearer()
 async def signup(user_data: UserSignup):
     """Register a new user."""
     try:
-        logger.info(f"Signup attempt for email: {user_data.email}")
+        logger.info(f"Signup attempt for email: {user_data.email}, role: {user_data.role}")
         
         # Validate input
         if len(user_data.password) < 6:
@@ -30,59 +30,40 @@ async def signup(user_data: UserSignup):
                 detail="Password must be at least 6 characters long"
             )
         
-        # Check if user already exists - with error handling for corrupted data
-        try:
-            existing_user = await User.find_one(User.email == user_data.email)
-            if existing_user:
-                logger.warning(f"Signup failed: Email already exists: {user_data.email}")
+        # Check if user already exists by email
+        existing_user = await User.find_one(User.email == user_data.email)
+        if existing_user:
+            logger.warning(f"Signup failed: Email already exists: {user_data.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # For students, check if roll_number already exists
+        if user_data.role == UserRole.STUDENT and user_data.roll_number:
+            existing_roll = await User.find_one(User.roll_number == user_data.roll_number)
+            if existing_roll:
+                logger.warning(f"Signup failed: Roll number already exists: {user_data.roll_number}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered"
-                )
-        except ValidationError as ve:
-            logger.error(f"Database validation error when checking existing user: {ve}")
-            # If there's a validation error, it means there's corrupted data
-            # Let's try to clean it up by finding and removing the corrupted document
-            try:
-                from beanie import init_beanie
-                import motor.motor_asyncio
-                
-                client = motor.motor_asyncio.AsyncIOMotorClient("mongodb://localhost:27017")
-                collection = client.course_allocation.users
-                
-                # Find documents with this email that might be corrupted
-                corrupted_docs = await collection.find({"email": user_data.email}).to_list(length=None)
-                for doc in corrupted_docs:
-                    if 'hashed_password' not in doc or not doc.get('hashed_password'):
-                        logger.warning(f"Removing corrupted user document: {doc.get('_id')}")
-                        await collection.delete_one({"_id": doc["_id"]})
-                
-                logger.info("Corrupted data cleaned up, proceeding with signup")
-                
-            except Exception as cleanup_error:
-                logger.error(f"Failed to cleanup corrupted data: {cleanup_error}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Database integrity issue. Please contact administrator."
+                    detail="Roll number already registered"
                 )
 
         # Hash password
         hashed_password = get_password_hash(user_data.password)
         logger.info(f"Password hashed successfully for: {user_data.email}")
 
-        # Create user document with explicit field assignment
+        # Create user document
         user_dict = {
             "email": user_data.email,
             "hashed_password": hashed_password,
             "role": user_data.role,
+            "roll_number": user_data.roll_number if user_data.role == UserRole.STUDENT else None,
             "is_active": True,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
         
-        logger.info(f"Creating user with data keys: {list(user_dict.keys())}")
-        
-        # Create and save user
         user = User(**user_dict)
         await user.insert()
         
@@ -92,6 +73,7 @@ async def signup(user_data: UserSignup):
             id=str(user.id),
             email=user.email,
             role=user.role,
+            roll_number=user.roll_number,
             is_active=user.is_active,
             created_at=user.created_at
         )
@@ -100,9 +82,6 @@ async def signup(user_data: UserSignup):
         raise
     except Exception as e:
         logger.error(f"Signup error: {str(e)}")
-        logger.error(f"Error type: {type(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error during signup: {str(e)}"
@@ -114,16 +93,7 @@ async def login(credentials: UserLogin):
     try:
         logger.info(f"Login attempt for email: {credentials.email}")
         
-        # Find user by email with error handling
-        try:
-            user = await User.find_one(User.email == credentials.email)
-        except ValidationError as ve:
-            logger.error(f"Database validation error during login: {ve}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database integrity issue. Please contact administrator."
-            )
-            
+        user = await User.find_one(User.email == credentials.email)
         if not user:
             logger.warning(f"Login failed: User not found: {credentials.email}")
             raise HTTPException(
@@ -147,10 +117,20 @@ async def login(credentials: UserLogin):
                 detail="Account is disabled"
             )
 
-        # Create access token
+        # Create access token with roll_number
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        token_data = {
+            "sub": str(user.id), 
+            "email": user.email, 
+            "role": user.role,
+        }
+        
+        # Add roll_number to token for students
+        if user.role == UserRole.STUDENT and user.roll_number:
+            token_data["roll_number"] = user.roll_number
+            
         access_token = create_access_token(
-            data={"sub": str(user.id), "email": user.email, "role": user.role},
+            data=token_data,
             expires_delta=access_token_expires
         )
 
@@ -162,6 +142,7 @@ async def login(credentials: UserLogin):
                 id=str(user.id),
                 email=user.email,
                 role=user.role,
+                roll_number=user.roll_number,
                 is_active=user.is_active,
                 created_at=user.created_at
             )

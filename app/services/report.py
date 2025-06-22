@@ -66,20 +66,23 @@ def generate_simple_allocation_report(
         if not hasattr(allocation, 'student_allocations'):
             raise ValueError("Invalid allocation object: missing student_allocations attribute")
         
-        # 1. STUDENT ALLOCATION SUMMARY
+        # 1. STUDENT ALLOCATION SUMMARY - FIXED TO USE ROLL_NUMBER
         student_data = []
         for student in allocation.student_allocations:
-            if not hasattr(student, 'student_id'):
-                logger.warning(f"Skipping student without student_id: {student}")
+            # Check for both roll_number and student_id for backward compatibility
+            student_identifier = getattr(student, 'roll_number', None) or getattr(student, 'student_id', None)
+            
+            if not student_identifier:
+                logger.warning(f"Skipping student without roll_number or student_id: {student}")
                 continue
                 
             row = {
-                'Student ID': getattr(student, 'student_id', 'Unknown'),
+                'Roll Number': student_identifier,  # Changed from 'Student ID'
                 'Student Name': getattr(student, 'name', 'Unknown'),
                 'PECL1 Course': student.allocations.get('PECL1', 'Not Allocated'),
                 'PECL2 Course': student.allocations.get('PECL2', 'Not Allocated'), 
-                'Program Elective Course': student.allocations.get('Program Elective', 'Not Allocated'),  # Fixed naming
-                'Open Elective Course': student.allocations.get('Open Elective', 'Not Allocated'),      # Fixed naming
+                'Program Elective Course': student.allocations.get('Program Elective', 'Not Allocated'),
+                'Open Elective Course': student.allocations.get('Open Elective', 'Not Allocated'),
                 'MDM Course': student.allocations.get('MDM', 'Not Allocated'),
                 'Honors Course': student.allocations.get('Honors', 'None'),
                 'Minor Course': student.allocations.get('Minor', 'None'),
@@ -275,14 +278,17 @@ def _generate_excel_report(student_data, course_data, summary_data, allocation, 
             summary_df = pd.DataFrame(summary_data, columns=['Metric', 'Value'])
             summary_df.to_excel(writer, sheet_name='Summary Statistics', index=False)
             
-            # Sheet 4: Issues (if any)
+            # Sheet 4: Issues (if any) - FIXED TO USE ROLL_NUMBER
             issues_data = []
             if hasattr(allocation, 'student_allocations'):
                 for student in allocation.student_allocations:
                     if hasattr(student, 'issues') and student.issues:
+                        # Check for both roll_number and student_id
+                        student_identifier = getattr(student, 'roll_number', None) or getattr(student, 'student_id', None)
+                        
                         for issue in student.issues:
                             issues_data.append({
-                                'Student ID': getattr(student, 'student_id', 'Unknown'),
+                                'Roll Number': student_identifier,  # Changed from 'Student ID'
                                 'Student Name': getattr(student, 'name', 'Unknown'),
                                 'Issue': issue
                             })

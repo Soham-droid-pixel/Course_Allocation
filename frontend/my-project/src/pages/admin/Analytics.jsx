@@ -30,6 +30,7 @@ function Analytics() {
   const [selectedCategory, setSelectedCategory] = useState('PECL1')
   const [viewMode, setViewMode] = useState('overview') // overview, detailed, students
   const [searchTerm, setSearchTerm] = useState('')
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     fetchAnalysisData()
@@ -38,11 +39,34 @@ function Analytics() {
   const fetchAnalysisData = async () => {
     try {
       setLoading(true)
+      setError(null)
+      
+      console.log('Fetching analysis data...')
       const data = await getPreferencesAnalysis()
+      
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid data format received')
+      }
+      
+      console.log('Analysis data received successfully')
       setAnalysisData(data)
+      
     } catch (error) {
-      toast.error('Failed to fetch preferences analysis')
       console.error('Analysis fetch error:', error)
+      setError(error.message || 'Failed to fetch preferences analysis')
+      
+      // Set empty data to prevent crashes
+      setAnalysisData({
+        summary: { 
+          total_students: 0, 
+          confirmed_students: 0, 
+          draft_students: 0, 
+          completion_rate: 0 
+        },
+        course_demand: {},
+        category_analysis: {},
+        student_details: []
+      })
     } finally {
       setLoading(false)
     }

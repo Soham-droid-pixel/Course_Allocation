@@ -10,7 +10,8 @@ function Signup() {
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'student'
+    role: 'student',
+    roll_number: ''  // Add roll_number field
   });
 
   const handleChange = (e) => {
@@ -34,19 +35,32 @@ function Signup() {
       return;
     }
 
+    // Validate roll_number for students
+    if (formData.role === 'student' && !formData.roll_number.trim()) {
+      toast.error('Roll number is required for students');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await authAPI.signup({
+      const signupData = {
         email: formData.email,
         password: formData.password,
         role: formData.role
-      });
+      };
+
+      // Only include roll_number for students
+      if (formData.role === 'student') {
+        signupData.roll_number = formData.roll_number.trim();
+      }
+
+      await authAPI.signup(signupData);
       
       toast.success('Account created successfully! Please login.');
       navigate('/login');
     } catch (error) {
-      toast.error(error.message || 'Signup failed');
+      toast.error(error.response?.data?.detail || error.message || 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -56,6 +70,7 @@ function Signup() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-white py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full">
         <div className="bg-white rounded-lg shadow-xl p-8 space-y-8">
+          {/* Header */}
           <div>
             <h2 className="mt-2 text-center text-3xl font-extrabold text-gray-900">
               Create Account
@@ -67,6 +82,7 @@ function Signup() {
 
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-4">
+              {/* Email */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                   Email address
@@ -84,6 +100,7 @@ function Signup() {
                 />
               </div>
 
+              {/* Role */}
               <div>
                 <label htmlFor="role" className="block text-sm font-medium text-gray-700">
                   Role
@@ -102,6 +119,27 @@ function Signup() {
                 </select>
               </div>
 
+              {/* Roll Number - Only show for students */}
+              {formData.role === 'student' && (
+                <div>
+                  <label htmlFor="roll_number" className="block text-sm font-medium text-gray-700">
+                    Roll Number
+                  </label>
+                  <input
+                    id="roll_number"
+                    name="roll_number"
+                    type="text"
+                    required={formData.role === 'student'}
+                    disabled={loading}
+                    className="mt-1 appearance-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                    placeholder="Enter your roll number (e.g., 21CS001)"
+                    value={formData.roll_number}
+                    onChange={handleChange}
+                  />
+                </div>
+              )}
+
+              {/* Password fields remain the same */}
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   Password
@@ -137,6 +175,7 @@ function Signup() {
               </div>
             </div>
 
+            {/* Submit button remains the same */}
             <div>
               <button
                 type="submit"

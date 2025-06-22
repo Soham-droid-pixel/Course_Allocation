@@ -66,7 +66,7 @@ class PreferenceBase(BaseModel):
 
 
 class StudentPreference(BaseModel):
-    student_id: str
+    roll_number: str  # Changed from student_id
     name: str = Field(default="Unknown")
     preferences: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     status: PreferenceStatus = PreferenceStatus.DRAFT
@@ -78,7 +78,6 @@ class StudentPreference(BaseModel):
         prefs = values.get("preferences", {})
         cleaned_prefs = {}
 
-        # Ensure all categories exist with proper string defaults
         for category in CourseCategory:
             val = prefs.get(category.value, {})
             if not isinstance(val, dict):
@@ -89,14 +88,15 @@ class StudentPreference(BaseModel):
                 "choice2": "" if val.get("choice2") is None else str(val.get("choice2")).strip()
             }
 
-        # Add additional validation for confirmed status
-        if values.get("status") == PreferenceStatus.CONFIRMED or values.get("status") == "confirmed":
+        # Only validate MDM for confirmed status, not draft
+        status = values.get("status")
+        if status == PreferenceStatus.CONFIRMED or status == "confirmed":
             mdm_choices = cleaned_prefs.get("MDM", {})
             mdm_choice1 = mdm_choices.get("choice1", "").strip()
             
             if not mdm_choice1:
                 raise ValueError(
-                    f"Student {values.get('student_id', 'Unknown')}: "
+                    f"Student {values.get('roll_number', 'Unknown')}: "
                     "MDM first choice is mandatory for confirmed preferences"
                 )
 
@@ -147,7 +147,8 @@ class AllocationRequest(BaseModel):
 
 
 class StudentAllocation(BaseModel):
-    student_id: str
+    roll_number: str  # Primary identifier
+    student_id: Optional[str] = None  # For backward compatibility
     name: str
     allocations: Dict[str, str] = Field(default_factory=dict)
     issues: List[str] = Field(default_factory=list)
@@ -164,6 +165,11 @@ class StudentAllocation(BaseModel):
             for category, course_id in v.items() 
             if course_id is not None and str(course_id).strip()
         }
+    
+    @property
+    def student_id(self):
+        """Backward compatibility - return roll_number as student_id"""
+        return self.roll_number
 
 
 class CourseEnrollment(BaseModel):
@@ -188,7 +194,7 @@ class AllocationResponse(BaseModel):
 
 
 class PreferenceResponse(BaseModel):
-    student_id: str
+    roll_number: str  # Changed from student_id
     name: str = Field(default="Unknown")
     preferences: Dict[str, Dict[str, str]] = Field(default_factory=dict)
     status: PreferenceStatus = Field(default=PreferenceStatus.DRAFT)
@@ -222,70 +228,21 @@ class PreferenceResponse(BaseModel):
 
 
 class PreferenceConfirmation(BaseModel):
-    student_id: str
+    roll_number: str
     name: str = Field(default="Unknown")
     preferences: Dict[str, Dict[str, str]] = Field(default_factory=dict)
-    confirm: bool = Field(default=False)
+    confirm: bool = Field(default=False)  # Simple boolean flag
     comments: str = Field(default="")
-    status: PreferenceStatus = Field(default=PreferenceStatus.DRAFT)
+    status: str = Field(default="draft")
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-    @root_validator(pre=True)
-    def clean_data(cls, values):
-        # Initialize empty preferences with default values
-        cleaned_prefs = {}
-        prefs = values.get("preferences", {})
-
-        # Ensure all categories exist with default empty strings
-        for category in CourseCategory:
-            current = prefs.get(category.value, {})
-            if not isinstance(current, dict):
-                current = {}
-            
-            # Convert None to empty string and ensure string type
-            choice1 = current.get("choice1")
-            choice2 = current.get("choice2")
-            
-            cleaned_prefs[category.value] = {
-                "choice1": "" if choice1 is None else str(choice1).strip(),
-                "choice2": "" if choice2 is None else str(choice2).strip()
-            }
-
-        values["preferences"] = cleaned_prefs
-        
-        # Set status based on confirm flag
-        if values.get("confirm", False):
-            values["status"] = PreferenceStatus.CONFIRMED
-            
-            # Validate MDM choice for confirmed preferences
-            mdm_choices = cleaned_prefs.get("MDM", {})
-            mdm_choice1 = mdm_choices.get("choice1", "").strip()
-            
-            if not mdm_choice1:
-                raise ValueError(
-                    f"Student {values.get('student_id', 'Unknown')}: "
-                    "MDM first choice is mandatory for confirmed preferences"
-                )
-        else:
-            values["status"] = PreferenceStatus.DRAFT
-
-        return values
 
     class Config:
         json_schema_extra = {
             "example": {
-                "student_id": "TEST001",
+                "roll_number": "21CS001",
                 "name": "Test Student",
-                "preferences": {
-                    "PECL1": {"choice1": "25PECL13CE11", "choice2": "25PECL13CE12"},
-                    "PECL2": {"choice1": "25PECL13CE21", "choice2": "25PECL13CE22"},
-                    "MDM": {"choice1": "MDM1", "choice2": ""},
-                    "Honors": {"choice1": "", "choice2": ""},
-                    "Minor": {"choice1": "", "choice2": ""},
-                    "Program Elective": {"choice1": "", "choice2": ""},
-                    "Open Elective": {"choice1": "", "choice2": ""}
-                },
-                "confirm": True,
+                "preferences": {},
+                "confirm": True,  # true = confirmed, false = draft
                 "comments": "Updated preferences",
                 "status": "confirmed"
             }

@@ -43,8 +43,8 @@ def validate_student_preferences(preferences: List[StudentPreference]) -> List[S
             mdm_choice1 = str(mdm_prefs.get("choice1", "")).strip()
             
             if not mdm_choice1 or mdm_choice1 not in VALID_MDM_COURSES:
-                invalid_students.append(pref.student_id)
-                logger.warning(f"Invalid MDM selection for student {pref.student_id}: {mdm_choice1}")
+                invalid_students.append(pref.roll_number)  # Changed from student_id
+                logger.warning(f"Invalid MDM selection for student {pref.roll_number}: {mdm_choice1}")
                 continue
                 
             # Check that student has preferences for all mandatory categories
@@ -56,13 +56,13 @@ def validate_student_preferences(preferences: List[StudentPreference]) -> List[S
                     missing_categories.append(category)
             
             if missing_categories:
-                logger.warning(f"Student {pref.student_id} missing choices for: {', '.join(missing_categories)}")
+                logger.warning(f"Student {pref.roll_number} missing choices for: {', '.join(missing_categories)}")
                 # Still include them but log the issue
                 
             # Validate preferences structure
             for category, choices in pref.preferences.items():
                 if not isinstance(choices, dict):
-                    logger.warning(f"Invalid preference format for {pref.student_id} in {category}")
+                    logger.warning(f"Invalid preference format for {pref.roll_number} in {category}")
                     continue
                     
                 # Ensure choices are strings
@@ -72,8 +72,8 @@ def validate_student_preferences(preferences: List[StudentPreference]) -> List[S
             validated.append(pref)
             
         except Exception as e:
-            logger.error(f"Error validating preferences for {pref.student_id}: {str(e)}")
-            invalid_students.append(pref.student_id)
+            logger.error(f"Error validating preferences for {pref.roll_number}: {str(e)}")
+            invalid_students.append(pref.roll_number)
     
     if invalid_students:
         logger.error(f"Found {len(invalid_students)} invalid preferences: {', '.join(invalid_students)}")
@@ -90,7 +90,7 @@ def allocate_mandatory_courses(
     
     for student in preferences:
         allocation = StudentAllocation(
-            student_id=student.student_id,
+            roll_number=student.roll_number,  # Changed from student_id
             name=student.name,
             allocations={},
             issues=[]
@@ -109,6 +109,7 @@ def allocate_mandatory_courses(
             if choice1 not in course_enrollments:
                 course_enrollments[choice1] = CourseEnrollment(
                     course_id=choice1,
+                    name=get_course_name(choice1),  # Add course name
                     min_enrollment=MIN_ENROLLMENT,  # 20 for mandatory courses
                     enrolled=0,
                     students=[]
@@ -116,10 +117,10 @@ def allocate_mandatory_courses(
                 
             # Allocate to first choice
             course = course_enrollments[choice1]
-            course.students.append(student.student_id)
+            course.students.append(student.roll_number)  # Changed from student_id
             course.enrolled += 1
             allocation.allocations[category] = choice1
-            logger.debug(f"Allocated {choice1} to {student.student_id} for {category}")
+            logger.debug(f"Allocated {choice1} to {student.roll_number} for {category}")
         
         student_allocations.append(allocation)
         
@@ -144,11 +145,11 @@ def reallocate_underenrolled_courses(
         
     logger.info(f"Found {len(underenrolled_courses)} underenrolled courses: {underenrolled_courses}")
     
-    # Create student preference lookup
-    pref_lookup = {pref.student_id: pref for pref in preferences}
+    # Create student preference lookup using roll_number
+    pref_lookup = {pref.roll_number: pref for pref in preferences}  # Changed from student_id
     
     for student_alloc in student_allocations:
-        student_pref = pref_lookup.get(student_alloc.student_id)
+        student_pref = pref_lookup.get(student_alloc.roll_number)  # Changed from student_id
         if not student_pref:
             continue
             
@@ -166,6 +167,7 @@ def reallocate_underenrolled_courses(
                     if second_choice not in course_enrollments:
                         course_enrollments[second_choice] = CourseEnrollment(
                             course_id=second_choice,
+                            name=get_course_name(second_choice),
                             min_enrollment=MIN_ENROLLMENT,
                             enrolled=0,
                             students=[]
@@ -173,12 +175,12 @@ def reallocate_underenrolled_courses(
                     
                     # Remove from first choice
                     old_course = course_enrollments[allocated_course]
-                    old_course.students.remove(student_alloc.student_id)
+                    old_course.students.remove(student_alloc.roll_number)  # Changed from student_id
                     old_course.enrolled -= 1
                     
                     # Add to second choice
                     new_course = course_enrollments[second_choice]
-                    new_course.students.append(student_alloc.student_id)
+                    new_course.students.append(student_alloc.roll_number)  # Changed from student_id
                     new_course.enrolled += 1
                     
                     # Update allocation
@@ -186,14 +188,14 @@ def reallocate_underenrolled_courses(
                     student_alloc.issues.append(
                         f"Reallocated from {allocated_course} to {second_choice} in {category} due to insufficient enrollment"
                     )
-                    logger.info(f"Reallocated {student_alloc.student_id}: {allocated_course} → {second_choice}")
+                    logger.info(f"Reallocated {student_alloc.roll_number}: {allocated_course} → {second_choice}")
                     
                 else:
                     # No second choice - this is a problem for mandatory categories
                     student_alloc.issues.append(
                         f"CRITICAL: Cannot reallocate from {allocated_course} in mandatory {category} - no second choice"
                     )
-                    logger.error(f"Cannot reallocate {student_alloc.student_id} from {allocated_course} in {category}")
+                    logger.error(f"Cannot reallocate {student_alloc.roll_number} from {allocated_course} in {category}")
     
     # Remove courses that still don't meet minimum enrollment
     final_underenrolled = []
@@ -216,7 +218,7 @@ def ensure_complete_allocation(
     """Ensure each student has all 5 mandatory courses allocated"""
     
     issues = []
-    pref_lookup = {pref.student_id: pref for pref in preferences}
+    pref_lookup = {pref.roll_number: pref for pref in preferences}  # Changed from student_id
     
     for student_alloc in student_allocations:
         missing_categories = []
@@ -227,10 +229,10 @@ def ensure_complete_allocation(
                 missing_categories.append(category)
         
         if missing_categories:
-            logger.warning(f"Student {student_alloc.student_id} missing allocations for: {', '.join(missing_categories)}")
+            logger.warning(f"Student {student_alloc.roll_number} missing allocations for: {', '.join(missing_categories)}")
             
             # Try to allocate to any available course in missing categories
-            student_pref = pref_lookup.get(student_alloc.student_id)
+            student_pref = pref_lookup.get(student_alloc.roll_number)  # Changed from student_id
             if student_pref:
                 for category in missing_categories:
                     choices = student_pref.preferences.get(category, {})
@@ -245,16 +247,16 @@ def ensure_complete_allocation(
                         # Check if this course still exists (wasn't canceled)
                         if course_choice in course_enrollments:
                             # Allocate to this course
-                            course_enrollments[course_choice].students.append(student_alloc.student_id)
+                            course_enrollments[course_choice].students.append(student_alloc.roll_number)  # Changed
                             course_enrollments[course_choice].enrolled += 1
                             student_alloc.allocations[category] = course_choice
                             student_alloc.issues.append(f"Late allocation to {course_choice} in {category}")
-                            logger.info(f"Late allocation: {student_alloc.student_id} to {course_choice} in {category}")
+                            logger.info(f"Late allocation: {student_alloc.roll_number} to {course_choice} in {category}")
                             allocated = True
                             break
                     
                     if not allocated:
-                        issues.append(f"CRITICAL: Student {student_alloc.student_id} could not be allocated to {category}")
+                        issues.append(f"CRITICAL: Student {student_alloc.roll_number} could not be allocated to {category}")
                         student_alloc.issues.append(f"FAILED to allocate {category}")
     
     return issues
@@ -268,8 +270,13 @@ def allocate_optional_courses(
     
     issues = []
     
-    for i, student in enumerate(preferences):
-        student_alloc = student_allocations[i]
+    # Create lookup for student allocations by roll_number
+    allocation_lookup = {alloc.roll_number: alloc for alloc in student_allocations}
+    
+    for student in preferences:
+        student_alloc = allocation_lookup.get(student.roll_number)
+        if not student_alloc:
+            continue
         
         # Check Honors and Minor preferences
         honors_choices = student.preferences.get("Honors", {})
@@ -282,51 +289,54 @@ def allocate_optional_courses(
         if honors_choice1 and minor_choice1:
             # Student chose both - prioritize Honors, reject Minor
             student_alloc.issues.append("Cannot choose both Honors and Minor - allocated to Honors only")
-            issues.append(f"Student {student.student_id} chose both Honors and Minor - allocated Honors only")
+            issues.append(f"Student {student.roll_number} chose both Honors and Minor - allocated Honors only")
             
             # Allocate only Honors (NO minimum enrollment)
             if honors_choice1 not in course_enrollments:
                 course_enrollments[honors_choice1] = CourseEnrollment(
                     course_id=honors_choice1,
+                    name=get_course_name(honors_choice1),
                     min_enrollment=0,  # NO minimum enrollment
                     enrolled=0,
                     students=[]
                 )
             
-            course_enrollments[honors_choice1].students.append(student.student_id)
+            course_enrollments[honors_choice1].students.append(student.roll_number)  # Changed
             course_enrollments[honors_choice1].enrolled += 1
             student_alloc.allocations["Honors"] = honors_choice1
-            logger.info(f"Allocated Honors {honors_choice1} to {student.student_id} (rejected Minor)")
+            logger.info(f"Allocated Honors {honors_choice1} to {student.roll_number} (rejected Minor)")
             
         elif honors_choice1:
             # Only Honors chosen (NO minimum enrollment)
             if honors_choice1 not in course_enrollments:
                 course_enrollments[honors_choice1] = CourseEnrollment(
                     course_id=honors_choice1,
+                    name=get_course_name(honors_choice1),
                     min_enrollment=0,  # NO minimum enrollment
                     enrolled=0,
                     students=[]
                 )
             
-            course_enrollments[honors_choice1].students.append(student.student_id)
+            course_enrollments[honors_choice1].students.append(student.roll_number)  # Changed
             course_enrollments[honors_choice1].enrolled += 1
             student_alloc.allocations["Honors"] = honors_choice1
-            logger.debug(f"Allocated Honors {honors_choice1} to {student.student_id}")
+            logger.debug(f"Allocated Honors {honors_choice1} to {student.roll_number}")
             
         elif minor_choice1:
             # Only Minor chosen (NO minimum enrollment)
             if minor_choice1 not in course_enrollments:
                 course_enrollments[minor_choice1] = CourseEnrollment(
                     course_id=minor_choice1,
+                    name=get_course_name(minor_choice1),
                     min_enrollment=0,  # NO minimum enrollment
                     enrolled=0,
                     students=[]
                 )
             
-            course_enrollments[minor_choice1].students.append(student.student_id)
+            course_enrollments[minor_choice1].students.append(student.roll_number)  # Changed
             course_enrollments[minor_choice1].enrolled += 1
             student_alloc.allocations["Minor"] = minor_choice1
-            logger.debug(f"Allocated Minor {minor_choice1} to {student.student_id}")
+            logger.debug(f"Allocated Minor {minor_choice1} to {student.roll_number}")
     
     return issues
 
@@ -384,104 +394,81 @@ def get_course_name(course_id: str) -> str:
     return course_names.get(course_id, course_id)
 
 def allocate_courses(preferences: List[StudentPreference]) -> AllocationResponse:
-    """Main allocation function with Honors/Minor mutual exclusivity"""
+    """Main allocation function using roll_number - COMPLETE IMPLEMENTATION"""
+    
     try:
-        allocation_id = str(uuid.uuid4())
-        logger.info(f"Starting allocation with mutual exclusivity rules {allocation_id}")
+        logger.info(f"Starting allocation for {len(preferences)} students")
         
-        # Validate preferences
-        valid_preferences = validate_student_preferences(preferences)
-        if not valid_preferences:
-            raise CourseAllocationException("No valid preferences found")
-            
-        logger.info(f"Processing {len(valid_preferences)} valid preferences")
+        # Step 1: Validate student preferences
+        validated_preferences = validate_student_preferences(preferences)
+        logger.info(f"Validated {len(validated_preferences)} student preferences")
         
-        # Initialize tracking
+        if not validated_preferences:
+            raise CourseAllocationException("No valid student preferences found")
+        
+        # Initialize course enrollments dictionary
         course_enrollments: Dict[str, CourseEnrollment] = {}
-        issues: List[str] = []
+        global_issues = []
         
-        # Phase 1: Allocate mandatory courses (5 required courses)
-        student_allocations, allocation_issues = allocate_mandatory_courses(
-            valid_preferences, 
-            course_enrollments
+        # Step 2: Allocate mandatory courses (first choices)
+        logger.info("Allocating mandatory courses...")
+        student_allocations, mandatory_issues = allocate_mandatory_courses(
+            validated_preferences, course_enrollments
         )
-        issues.extend(allocation_issues)
-        logger.info(f"Phase 1: Mandatory allocation completed")
+        global_issues.extend(mandatory_issues)
         
-        # Phase 2: Handle underenrolled mandatory courses
+        # Step 3: Handle underenrolled mandatory courses (reallocate to second choices)
+        logger.info("Handling underenrolled mandatory courses...")
         reallocation_issues = reallocate_underenrolled_courses(
-            student_allocations,
-            valid_preferences,
-            course_enrollments
+            student_allocations, validated_preferences, course_enrollments
         )
-        issues.extend(reallocation_issues)
-        logger.info(f"Phase 2: Reallocation completed")
+        global_issues.extend(reallocation_issues)
         
-        # Phase 3: Allocate optional courses (Honors XOR Minor)
-        optional_issues = allocate_optional_courses(
-            student_allocations,
-            valid_preferences,
-            course_enrollments
-        )
-        issues.extend(optional_issues)
-        logger.info(f"Phase 3: Optional courses allocated with mutual exclusivity")
-        
-        # Phase 4: Ensure complete mandatory allocation
+        # Step 4: Ensure all students have complete allocations
+        logger.info("Ensuring complete allocations...")
         completion_issues = ensure_complete_allocation(
-            student_allocations,
-            valid_preferences,
-            course_enrollments
+            student_allocations, validated_preferences, course_enrollments
         )
-        issues.extend(completion_issues)
-        logger.info(f"Phase 4: Completion check done")
+        global_issues.extend(completion_issues)
         
-        # Phase 5: Generate comprehensive statistics
-        total_allocations = sum(len(student.allocations) for student in student_allocations)
-        
-        # Count allocations per mandatory category
-        category_stats = {}
-        for category in MANDATORY_CATEGORIES:
-            allocated_count = sum(
-                1 for student in student_allocations 
-                if category in student.allocations
-            )
-            category_stats[category] = f"{allocated_count}/{len(student_allocations)}"
-        
-        # Count optional allocations
-        for category in OPTIONAL_CATEGORIES:
-            allocated_count = sum(
-                1 for student in student_allocations 
-                if category in student.allocations
-            )
-            category_stats[category] = f"{allocated_count}/{len(student_allocations)}"
-        
-        # Students with complete allocation (all 5 mandatory)
-        complete_students = sum(
-            1 for student in student_allocations 
-            if all(cat in student.allocations for cat in MANDATORY_CATEGORIES)
+        # Step 5: Allocate optional courses (Honors XOR Minor)
+        logger.info("Allocating optional courses...")
+        optional_issues = allocate_optional_courses(
+            student_allocations, validated_preferences, course_enrollments
         )
+        global_issues.extend(optional_issues)
         
-        # Phase 5: Log final comprehensive results
-        logger.info(f"=== ALLOCATION COMPLETED ===")
-        logger.info(f"Students processed: {len(student_allocations)}")
-        logger.info(f"Total course allocations: {total_allocations}")
-        logger.info(f"Students with complete allocation (5 courses): {complete_students}/{len(student_allocations)}")
-        logger.info(f"Category allocation rates:")
-        for category, stats in category_stats.items():
-            logger.info(f"  - {category}: {stats}")
-        logger.info(f"Active courses: {len(course_enrollments)}")
-        logger.info(f"Issues reported: {len(issues)}")
+        # Step 6: Prepare final response
+        allocation_id = str(uuid.uuid4())
+        
+        # Log final statistics
+        total_courses = len(course_enrollments)
+        active_courses = sum(1 for course in course_enrollments.values() if course.enrolled > 0)
+        canceled_courses = total_courses - active_courses
+        
+        logger.info(f"Allocation completed:")
+        logger.info(f"  - Students processed: {len(student_allocations)}")
+        logger.info(f"  - Total courses: {total_courses}")
+        logger.info(f"  - Active courses: {active_courses}")
+        logger.info(f"  - Canceled courses: {canceled_courses}")
+        logger.info(f"  - Issues reported: {len(global_issues)}")
+        
+        # Calculate allocation stats
+        complete_allocations = 0
+        for student in student_allocations:
+            mandatory_count = sum(1 for cat in MANDATORY_CATEGORIES if cat in student.allocations)
+            if mandatory_count == len(MANDATORY_CATEGORIES):
+                complete_allocations += 1
+        
+        logger.info(f"  - Students with complete mandatory allocation: {complete_allocations}/{len(student_allocations)}")
         
         return AllocationResponse(
             allocation_id=allocation_id,
             student_allocations=student_allocations,
             course_summaries=course_enrollments,
-            issues=issues
+            issues=global_issues
         )
         
-    except CourseAllocationException:
-        raise
     except Exception as e:
-        error_msg = f"Unexpected error during allocation: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        raise CourseAllocationException(error_msg)
+        logger.error(f"Critical error in allocation: {str(e)}", exc_info=True)
+        raise CourseAllocationException(f"Allocation failed: {str(e)}")

@@ -18,9 +18,9 @@ def validate_mdm_selection(students: List[StudentPreference]) -> None:
     for student in students:
         mdm_preferences = student.preferences.get("MDM", {})
         if not mdm_preferences or not mdm_preferences.get("choice1", "").strip():
-            # Ensure we have a valid student_id to add to the list
-            if hasattr(student, 'student_id') and student.student_id:
-                invalid_students.append(str(student.student_id))
+            # Use roll_number instead of student_id
+            if hasattr(student, 'roll_number') and student.roll_number:
+                invalid_students.append(str(student.roll_number))
             else:
                 invalid_students.append("Unknown Student")
     
@@ -49,12 +49,12 @@ def validate_student_preferences(students: List[StudentPreference]) -> List[str]
     issues = []
     
     for student in students:
-        # Ensure student has a valid ID
-        student_id = getattr(student, 'student_id', 'Unknown')
+        # Use roll_number instead of student_id
+        roll_number = getattr(student, 'roll_number', 'Unknown')
         
         # Check if student has any preferences
         if not student.preferences:
-            issues.append(f"Student {student_id}: No preferences submitted")
+            issues.append(f"Student {roll_number}: No preferences submitted")
             continue
         
         # Check for empty preference categories
@@ -65,7 +65,7 @@ def validate_student_preferences(students: List[StudentPreference]) -> List[str]
                 empty_categories.append(category)
         
         if empty_categories:
-            issues.append(f"Student {student_id}: Empty preferences for {', '.join(empty_categories)}")
+            issues.append(f"Student {roll_number}: Empty preferences for {', '.join(empty_categories)}")
     
     if issues:
         logger.warning(f"Found {len(issues)} validation issues")
@@ -85,32 +85,94 @@ def validate_student_data_integrity(students: List[StudentPreference]) -> List[s
         List of data integrity issues found
     """
     issues = []
-    seen_student_ids = set()
+    seen_roll_numbers = set()  # Changed from seen_student_ids
     
     for i, student in enumerate(students):
-        # Check for missing student ID
-        if not hasattr(student, 'student_id') or not student.student_id:
-            issues.append(f"Student at index {i}: Missing student ID")
+        # Check for missing roll_number (changed from student_id)
+        if not hasattr(student, 'roll_number') or not student.roll_number:
+            issues.append(f"Student at index {i}: Missing roll number")
             continue
         
-        student_id = str(student.student_id).strip()
-        if not student_id:
-            issues.append(f"Student at index {i}: Empty student ID")
+        roll_number = str(student.roll_number).strip()  # Changed from student_id
+        if not roll_number:
+            issues.append(f"Student at index {i}: Empty roll number")
             continue
         
-        # Check for duplicate student IDs
-        if student_id in seen_student_ids:
-            issues.append(f"Duplicate student ID found: {student_id}")
+        # Check for duplicate roll numbers (changed from student IDs)
+        if roll_number in seen_roll_numbers:
+            issues.append(f"Duplicate roll number found: {roll_number}")
         else:
-            seen_student_ids.add(student_id)
+            seen_roll_numbers.add(roll_number)
         
         # Check for missing name
         if not hasattr(student, 'name') or not str(getattr(student, 'name', '')).strip():
-            issues.append(f"Student {student_id}: Missing or empty name")
+            issues.append(f"Student {roll_number}: Missing or empty name")
     
     if issues:
         logger.error(f"Found {len(issues)} data integrity issues")
     else:
         logger.info("Student data integrity validation passed")
+    
+    return issues
+
+# Additional helper function for roll_number validation
+def validate_roll_number_format(roll_number: str) -> bool:
+    """
+    Validate roll number format (optional - adjust pattern as needed)
+    
+    Args:
+        roll_number: The roll number to validate
+        
+    Returns:
+        True if format is valid, False otherwise
+    """
+    if not roll_number or not isinstance(roll_number, str):
+        return False
+    
+    # Example format validation - adjust as per your requirements
+    # This assumes format like: 21CS001, 22ME015, etc.
+    import re
+    pattern = r'^[0-9]{2}[A-Z]{2,3}[0-9]{3}$'
+    return bool(re.match(pattern, roll_number.strip().upper()))
+
+def validate_confirmed_preferences(students: List[StudentPreference]) -> List[str]:
+    """
+    Validate that confirmed students have all required preferences
+    
+    Args:
+        students: List of student preferences to validate
+        
+    Returns:
+        List of validation issues for confirmed students
+    """
+    issues = []
+    
+    # Required categories for confirmation
+    required_categories = ["PECL1", "PECL2", "Program Elective", "Open Elective", "MDM"]
+    
+    confirmed_students = [s for s in students if getattr(s, 'status', '') == 'confirmed']
+    
+    for student in confirmed_students:
+        roll_number = getattr(student, 'roll_number', 'Unknown')
+        
+        # Check that all required categories have first choice
+        missing_required = []
+        for category in required_categories:
+            choices = student.preferences.get(category, {})
+            choice1 = str(choices.get("choice1", "")).strip()
+            if not choice1:
+                missing_required.append(category)
+        
+        if missing_required:
+            issues.append(f"Confirmed student {roll_number}: Missing required first choices for {', '.join(missing_required)}")
+        
+        # Special validation for MDM
+        mdm_choices = student.preferences.get("MDM", {})
+        mdm_choice1 = str(mdm_choices.get("choice1", "")).strip()
+        if mdm_choice1 not in ["MDM1", "MDM2"]:
+            issues.append(f"Confirmed student {roll_number}: Invalid MDM choice '{mdm_choice1}'. Must be MDM1 or MDM2")
+    
+    if issues:
+        logger.warning(f"Found {len(issues)} issues with confirmed preferences")
     
     return issues
