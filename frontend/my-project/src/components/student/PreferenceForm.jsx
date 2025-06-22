@@ -71,6 +71,10 @@ function PreferenceForm() {
     const [preferences, setPreferences] = useState({});
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
+    const [currentStep, setCurrentStep] = useState(0);
+    const [showMobileStep, setShowMobileStep] = useState(false);
+
+    const categorySteps = Object.keys(courses);
 
     useEffect(() => {
         if (user && user.roll_number) {
@@ -84,7 +88,6 @@ function PreferenceForm() {
         try {
             setInitialLoading(true);
             
-            // Check if we're editing existing preferences
             if (location.state?.editMode && location.state?.currentPreferences) {
                 console.log('Loading preferences for editing:', location.state.currentPreferences);
                 
@@ -101,7 +104,6 @@ function PreferenceForm() {
                 setPreferences(formattedPrefs);
                 toast.info('Loaded your previous preferences for editing');
             } else {
-                // Try to load existing preferences from API
                 try {
                     const existingPrefs = await getMyPreferences();
                     if (existingPrefs && existingPrefs.preferences) {
@@ -147,7 +149,6 @@ function PreferenceForm() {
     };
 
     const validatePreferences = () => {
-        // Check mandatory categories
         const mandatoryCategories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'];
         const missingMandatory = [];
         
@@ -161,12 +162,10 @@ function PreferenceForm() {
             throw new Error(`Please select first choice for: ${missingMandatory.join(', ')}`);
         }
         
-        // Validate MDM specifically
         if (!preferences.MDM?.choice1) {
             throw new Error('MDM course selection is mandatory');
         }
         
-        // Check for same choice in first and second
         for (const [category, choices] of Object.entries(preferences)) {
             if (choices.choice1 && choices.choice2 && choices.choice1 === choices.choice2) {
                 throw new Error(`Cannot select the same course for both choices in ${category}`);
@@ -189,10 +188,8 @@ function PreferenceForm() {
         try {
             setLoading(true);
             
-            // Validate preferences
             validatePreferences();
 
-            // Format preferences for API - ensure all categories are included
             const formattedPreferences = {};
             Object.keys(courses).forEach(category => {
                 formattedPreferences[category] = {
@@ -216,7 +213,6 @@ function PreferenceForm() {
 
             toast.success('Preferences saved successfully! Proceed to confirmation.');
             
-            // Navigate to confirmation with the current preferences
             navigate('/student/preferences/confirm', {
                 state: {
                     preferences: formattedPreferences,
@@ -232,13 +228,68 @@ function PreferenceForm() {
         }
     };
 
+    const getCategoryIcon = (category) => {
+        const icons = {
+            'PECL1': '⚡',
+            'PECL2': '🔬',
+            'Program Elective': '📚',
+            'Open Elective': '🌟',
+            'Honors': '🏆',
+            'Minor': '🎯',
+            'MDM': '🧠'
+        };
+        return icons[category] || '📖';
+    };
+
+    const getCompletedCount = () => {
+        return Object.entries(preferences).filter(([_, choices]) => choices.choice1).length;
+    };
+
+    const getProgressPercentage = () => {
+        const mandatoryCategories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'];
+        const completed = mandatoryCategories.filter(cat => preferences[cat]?.choice1).length;
+        return Math.round((completed / mandatoryCategories.length) * 100);
+    };
+
+    const getCurrentStepData = () => {
+        const category = categorySteps[currentStep];
+        return { category, courseList: courses[category] };
+    };
+
+    const nextStep = () => {
+        if (currentStep < categorySteps.length - 1) {
+            setCurrentStep(currentStep + 1);
+        }
+    };
+
+    const prevStep = () => {
+        if (currentStep > 0) {
+            setCurrentStep(currentStep - 1);
+        }
+    };
+
     // Show login prompt if user is not authenticated
     if (!user) {
         return (
-            <div className="max-w-4xl mx-auto p-6">
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <h2 className="text-lg font-semibold text-yellow-800 mb-2">Authentication Required</h2>
-                    <p className="text-yellow-700">Please log in to submit your course preferences.</p>
+            <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+                <div className="max-w-4xl mx-auto">
+                    <div className="bg-white rounded-xl shadow-sm border border-yellow-200 p-6 sm:p-8">
+                        <div className="text-center">
+                            <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                </svg>
+                            </div>
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Authentication Required</h2>
+                            <p className="text-gray-600 mb-6">Please log in to submit your course preferences.</p>
+                            <button
+                                onClick={() => navigate('/login')}
+                                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+                            >
+                                Go to Login
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
@@ -246,111 +297,389 @@ function PreferenceForm() {
 
     if (initialLoading) {
         return (
-            <div className="max-w-4xl mx-auto p-6">
-                <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                    <span className="ml-2 text-gray-600">Loading...</span>
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
+                    <p className="text-base sm:text-lg text-gray-600">Loading your preferences...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6">
-            <div className="mb-6">
-                <h2 className="text-2xl font-bold mb-2">Course Preference Selection</h2>
-                <p className="text-gray-600">Welcome, {user.roll_number}! Please select your course preferences.</p>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="space-y-8">
-                {Object.entries(courses).map(([category, courseList]) => (
-                    <div key={category} className="bg-white p-6 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold mb-4">
-                            {category.replace('_', ' ')}
-                            {['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'].includes(category) && 
-                                <span className="text-red-500"> *</span>}
-                        </h3>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    First Choice 
-                                    {['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'].includes(category) && 
-                                        <span className="text-red-500">*</span>}
-                                </label>
-                                <select
-                                    value={preferences[category]?.choice1 || ''}
-                                    onChange={(e) => {
-                                        console.log(`Choice1 changed for ${category}:`, e.target.value);
-                                        handlePreferenceChange(category, 'choice1', e.target.value);
-                                    }}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                    required={['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'].includes(category)}
+        <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+            <div className="max-w-6xl mx-auto space-y-6">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 text-white rounded-2xl p-6 sm:p-8 shadow-xl">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div className="flex-1">
+                            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">
+                                📝 Course Preference Form
+                            </h1>
+                            <p className="text-blue-100 text-sm sm:text-base lg:text-lg mb-3">
+                                Welcome, {user.roll_number}! Select your preferred courses for the semester.
+                            </p>
+                            
+                            {/* Mobile View Toggle */}
+                            <div className="lg:hidden">
+                                <button
+                                    onClick={() => setShowMobileStep(!showMobileStep)}
+                                    className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors"
                                 >
-                                    <option value="">Select course</option>
-                                    {courseList.map(course => (
-                                        <option key={course.id} value={course.id}>
-                                            {course.name} ({course.credits} credits)
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Second Choice
-                                </label>
-                                <select
-                                    value={preferences[category]?.choice2 || ''}
-                                    onChange={(e) => {
-                                        console.log(`Choice2 changed for ${category}:`, e.target.value);
-                                        handlePreferenceChange(category, 'choice2', e.target.value);
-                                    }}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                >
-                                    <option value="">Select course</option>
-                                    {courseList
-                                        .filter(course => course.id !== preferences[category]?.choice1)
-                                        .map(course => (
-                                            <option key={course.id} value={course.id}>
-                                                {course.name} ({course.credits} credits)
-                                            </option>
-                                        ))
-                                    }
-                                </select>
+                                    {showMobileStep ? '📋 Show All Categories' : '📱 Step-by-Step Mode'}
+                                    <svg className={`w-4 h-4 transform transition-transform ${showMobileStep ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
                             </div>
                         </div>
-
-                        {/* Show current selections for debugging */}
-                        {(preferences[category]?.choice1 || preferences[category]?.choice2) && (
-                            <div className="mt-2 text-sm text-blue-600">
-                                Current: {preferences[category]?.choice1 || 'None'} | {preferences[category]?.choice2 || 'None'}
+                        
+                        {/* Progress Stats */}
+                        <div className="flex flex-row lg:flex-col gap-4 lg:gap-2 items-center lg:items-end">
+                            <div className="text-center">
+                                <div className="text-2xl sm:text-3xl font-bold">{getProgressPercentage()}%</div>
+                                <div className="text-xs sm:text-sm text-blue-100">Complete</div>
                             </div>
-                        )}
+                            <div className="text-center">
+                                <div className="text-2xl sm:text-3xl font-bold">{getCompletedCount()}/7</div>
+                                <div className="text-xs sm:text-sm text-blue-100">Categories</div>
+                            </div>
+                        </div>
                     </div>
-                ))}
+                    
+                    {/* Progress Bar */}
+                    <div className="mt-6">
+                        <div className="bg-white/20 rounded-full h-2">
+                            <div 
+                                className="bg-white rounded-full h-2 transition-all duration-500"
+                                style={{ width: `${getProgressPercentage()}%` }}
+                            ></div>
+                        </div>
+                    </div>
 
-                <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold mb-2">Important Notes:</h4>
-                    <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• All categories marked with * are mandatory</li>
-                        <li>• MDM course selection is required</li>
-                        <li>• You can choose either Honors OR Minor courses (not both)</li>
-                        <li>• Second choices will be considered if first choice is not available</li>
-                        <li>• This saves as draft - you'll need to confirm on the next page</li>
-                    </ul>
+                    {/* Mobile Step Indicator */}
+                    {showMobileStep && (
+                        <div className="mt-4 lg:hidden">
+                            <div className="flex items-center justify-between text-sm">
+                                <span>Step {currentStep + 1} of {categorySteps.length}</span>
+                                <span>{getCategoryIcon(categorySteps[currentStep])} {categorySteps[currentStep]}</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                <div className="flex justify-end mt-6">
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
-                    >
-                        {loading ? 'Saving...' : 'Save & Continue to Confirmation'}
-                    </button>
-                </div>
-            </form>
+                {/* Mobile Step Navigation */}
+                {showMobileStep && (
+                    <div className="lg:hidden bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <button
+                                type="button"
+                                onClick={prevStep}
+                                disabled={currentStep === 0}
+                                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
+                                Previous
+                            </button>
+                            <div className="text-center">
+                                <div className="text-lg font-bold text-gray-900">{categorySteps[currentStep]}</div>
+                                <div className="text-xs text-gray-500">Category {currentStep + 1} of {categorySteps.length}</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={nextStep}
+                                disabled={currentStep === categorySteps.length - 1}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                            >
+                                Next
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Desktop: Show all categories, Mobile: Show single step if enabled */}
+                    {showMobileStep ? (
+                        // Mobile Step View
+                        <div className="lg:hidden">
+                            {(() => {
+                                const { category, courseList } = getCurrentStepData();
+                                const mandatoryCategories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'];
+                                const isMandatory = mandatoryCategories.includes(category);
+                                
+                                return (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                        {/* Category Header */}
+                                        <div className={`p-4 sm:p-6 ${isMandatory ? 'bg-gradient-to-r from-red-50 to-pink-50 border-b border-red-100' : 'bg-gray-50 border-b border-gray-200'}`}>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                                                    <span className="text-2xl">{getCategoryIcon(category)}</span>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h3 className="text-lg sm:text-xl font-bold text-gray-900">
+                                                        {category.replace('_', ' ')}
+                                                        {isMandatory && <span className="text-red-500 ml-1">*</span>}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-600">
+                                                        {isMandatory ? 'Required category' : 'Optional category'} • {courseList.length} courses available
+                                                    </p>
+                                                </div>
+                                                {preferences[category]?.choice1 && (
+                                                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Course Selection */}
+                                        <div className="p-4 sm:p-6 space-y-6">
+                                            {/* First Choice */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                    🥇 First Choice 
+                                                    {isMandatory && <span className="text-red-500 ml-1">*</span>}
+                                                </label>
+                                                <select
+                                                    value={preferences[category]?.choice1 || ''}
+                                                    onChange={(e) => handlePreferenceChange(category, 'choice1', e.target.value)}
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm sm:text-base"
+                                                    required={isMandatory}
+                                                >
+                                                    <option value="">Select your preferred course</option>
+                                                    {courseList.map(course => (
+                                                        <option key={course.id} value={course.id}>
+                                                            {course.name} ({course.credits} credit{course.credits > 1 ? 's' : ''})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Second Choice */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                    🥈 Second Choice (Backup)
+                                                </label>
+                                                <select
+                                                    value={preferences[category]?.choice2 || ''}
+                                                    onChange={(e) => handlePreferenceChange(category, 'choice2', e.target.value)}
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm sm:text-base"
+                                                >
+                                                    <option value="">Select backup course (optional)</option>
+                                                    {courseList
+                                                        .filter(course => course.id !== preferences[category]?.choice1)
+                                                        .map(course => (
+                                                            <option key={course.id} value={course.id}>
+                                                                {course.name} ({course.credits} credit{course.credits > 1 ? 's' : ''})
+                                                            </option>
+                                                        ))
+                                                    }
+                                                </select>
+                                            </div>
+
+                                            {/* Current Selection Summary */}
+                                            {(preferences[category]?.choice1 || preferences[category]?.choice2) && (
+                                                <div className="bg-blue-50 rounded-lg p-4">
+                                                    <h4 className="text-sm font-semibold text-blue-900 mb-2">Your Selections:</h4>
+                                                    <div className="space-y-2 text-sm">
+                                                        {preferences[category]?.choice1 && (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-green-600">🥇</span>
+                                                                <span className="text-blue-800">
+                                                                    {courseList.find(c => c.id === preferences[category].choice1)?.name}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {preferences[category]?.choice2 && (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-blue-600">🥈</span>
+                                                                <span className="text-blue-800">
+                                                                    {courseList.find(c => c.id === preferences[category].choice2)?.name}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    ) : null}
+
+                    {/* Desktop & Mobile All Categories View */}
+                    <div className={showMobileStep ? 'hidden lg:block' : 'block'}>
+                        <div className="grid gap-6">
+                            {Object.entries(courses).map(([category, courseList]) => {
+                                const mandatoryCategories = ['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'];
+                                const isMandatory = mandatoryCategories.includes(category);
+                                
+                                return (
+                                    <div key={category} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                        {/* Category Header */}
+                                        <div className={`p-4 sm:p-6 ${isMandatory ? 'bg-gradient-to-r from-red-50 to-pink-50 border-b border-red-100' : 'bg-gray-50 border-b border-gray-200'}`}>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                                                    <span className="text-xl sm:text-2xl">{getCategoryIcon(category)}</span>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h3 className="text-base sm:text-lg lg:text-xl font-bold text-gray-900">
+                                                        {category.replace('_', ' ')}
+                                                        {isMandatory && <span className="text-red-500 ml-1">*</span>}
+                                                    </h3>
+                                                    <p className="text-xs sm:text-sm text-gray-600">
+                                                        {isMandatory ? 'Required' : 'Optional'} • {courseList.length} courses
+                                                    </p>
+                                                </div>
+                                                {preferences[category]?.choice1 && (
+                                                    <div className="w-6 h-6 sm:w-8 sm:h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                                        <svg className="w-3 h-3 sm:w-5 sm:h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Course Selection */}
+                                        <div className="p-4 sm:p-6">
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                                                {/* First Choice */}
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                        🥇 First Choice 
+                                                        {isMandatory && <span className="text-red-500 ml-1">*</span>}
+                                                    </label>
+                                                    <select
+                                                        value={preferences[category]?.choice1 || ''}
+                                                        onChange={(e) => handlePreferenceChange(category, 'choice1', e.target.value)}
+                                                        className="w-full px-3 py-2 sm:px-4 sm:py-3 border border-gray-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+                                                        required={isMandatory}
+                                                    >
+                                                        <option value="">Select course</option>
+                                                        {courseList.map(course => (
+                                                            <option key={course.id} value={course.id}>
+                                                                {course.name} ({course.credits} credits)
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                {/* Second Choice */}
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                        🥈 Second Choice
+                                                    </label>
+                                                    <select
+                                                        value={preferences[category]?.choice2 || ''}
+                                                        onChange={(e) => handlePreferenceChange(category, 'choice2', e.target.value)}
+                                                        className="w-full px-3 py-2 sm:px-4 sm:py-3 border border-gray-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+                                                    >
+                                                        <option value="">Select backup</option>
+                                                        {courseList
+                                                            .filter(course => course.id !== preferences[category]?.choice1)
+                                                            .map(course => (
+                                                                <option key={course.id} value={course.id}>
+                                                                    {course.name} ({course.credits} credits)
+                                                                </option>
+                                                            ))
+                                                        }
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Selection Preview */}
+                                            {(preferences[category]?.choice1 || preferences[category]?.choice2) && (
+                                                <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                                                    <div className="text-xs sm:text-sm text-blue-800">
+                                                        <span className="font-medium">Selected: </span>
+                                                        {preferences[category]?.choice1 && (
+                                                            <span>🥇 {preferences[category].choice1}</span>
+                                                        )}
+                                                        {preferences[category]?.choice1 && preferences[category]?.choice2 && <span className="mx-2">|</span>}
+                                                        {preferences[category]?.choice2 && (
+                                                            <span>🥈 {preferences[category].choice2}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Important Notes */}
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 sm:p-6">
+                        <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-semibold text-yellow-800 mb-2">Important Guidelines</h4>
+                                <ul className="text-sm text-yellow-700 space-y-1">
+                                    <li>• All categories marked with ⭐ are mandatory</li>
+                                    <li>• MDM course selection is required for all students</li>
+                                    <li>• You can choose either Honors OR Minor courses (not both)</li>
+                                    <li>• Second choices will be considered if first choice is unavailable</li>
+                                    <li>• This saves as draft - you'll need to confirm on the next page</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Submit Button */}
+                    <div className="sticky bottom-4 sm:bottom-6 bg-white rounded-xl border border-gray-200 shadow-lg p-4 sm:p-6">
+                        <div className="flex flex-col sm:flex-row items-center gap-4">
+                            <div className="flex-1 text-center sm:text-left">
+                                <p className="text-sm text-gray-600">
+                                    Progress: <span className="font-semibold text-blue-600">{getCompletedCount()}/7 categories completed</span>
+                                </p>
+                                <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                                    <div 
+                                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${getProgressPercentage()}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 focus:ring-4 focus:ring-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
+                            >
+                                {loading ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>Save & Continue</span>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 }

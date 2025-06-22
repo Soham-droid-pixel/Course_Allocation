@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { useAuth } from '../../hooks/useAuth'
-import { getMyAllocationStatus } from '../../services/api'  // Use authenticated endpoint
+import { getMyAllocationStatus } from '../../services/api'
 
 function Status() {
-  const { user } = useAuth()  // Get authenticated user
+  const { user } = useAuth()
   const [statusData, setStatusData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -19,7 +19,6 @@ function Status() {
   const fetchAllocationStatus = async () => {
     try {
       setLoading(true)
-      // Use the authenticated endpoint instead of manual student ID
       const data = await getMyAllocationStatus()
       setStatusData(data)
     } catch (error) {
@@ -33,14 +32,14 @@ function Status() {
   const getStatusColor = (status) => {
     switch (status) {
       case 'allocated':
-        return 'text-green-600 bg-green-50'
+        return 'text-green-700 bg-green-50 border-green-200'
       case 'no_preferences':
       case 'not_allocated':
-        return 'text-red-600 bg-red-50'
+        return 'text-red-700 bg-red-50 border-red-200'
       case 'no_allocation_run':
-        return 'text-yellow-600 bg-yellow-50'
+        return 'text-yellow-700 bg-yellow-50 border-yellow-200'
       default:
-        return 'text-gray-600 bg-gray-50'
+        return 'text-gray-700 bg-gray-50 border-gray-200'
     }
   }
 
@@ -62,23 +61,44 @@ function Status() {
   const getPreferenceColor = (preferenceNumber) => {
     switch (preferenceNumber) {
       case '1st Choice':
-        return 'bg-green-100 text-green-800'
+        return 'bg-green-100 text-green-800 border-green-200'
       case '2nd Choice':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-blue-100 text-blue-800 border-blue-200'
       case 'Alternative':
-        return 'bg-orange-100 text-orange-800'
+        return 'bg-orange-100 text-orange-800 border-orange-200'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-gray-100 text-gray-800 border-gray-200'
     }
   }
 
-  // Show login prompt if not authenticated
+  const getCategoryIcon = (category) => {
+    const icons = {
+      'PECL1': '⚡',
+      'PECL2': '🔬',
+      'Program Elective': '📚',
+      'Open Elective': '🌟',
+      'MDM': '🧠',
+      'Honors': '🏆',
+      'Minor': '🎯'
+    }
+    return icons[category] || '📖'
+  }
+
   if (!user) {
     return (
-      <div className="max-w-4xl mx-auto py-6 px-4">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-yellow-800 mb-2">Authentication Required</h2>
-          <p className="text-yellow-700">Please log in to view your allocation status.</p>
+      <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl shadow-sm border border-yellow-200 p-6 sm:p-8">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Authentication Required</h2>
+              <p className="text-gray-600">Please log in to view your allocation status.</p>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -86,190 +106,291 @@ function Status() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg text-gray-600">Loading allocation status...</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
+          <p className="text-base sm:text-lg text-gray-600">Loading allocation status...</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-6 px-4">
-      {/* Student Info Header */}
-      <div className="mb-6 bg-white rounded-lg shadow p-4">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">My Allocation Status</h1>
-        <div className="flex items-center gap-4 text-sm text-gray-600">
-          <span><strong>Roll Number:</strong> {user.roll_number}</span>
-          <span><strong>Email:</strong> {user.email}</span>
-          <button
-            onClick={fetchAllocationStatus}
-            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-          >
-            Refresh Status
-          </button>
+    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
+                📊 My Allocation Status
+              </h1>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Roll Number:</span>
+                  <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg font-mono">
+                    {user.roll_number}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Email:</span>
+                  <span className="text-gray-900">{user.email}</span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={fetchAllocationStatus}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors self-start sm:self-auto"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
         </div>
-      </div>
 
-      {statusData ? (
-        <>
-          {/* Overall Status */}
-          <div className={`rounded-lg p-6 mb-6 ${getStatusColor(statusData.status)}`}>
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-2xl font-bold mb-2">
-                  Allocation Status: {getStatusMessage(statusData.status)}
-                </h2>
-                {statusData.submission_status && (
-                  <p className="text-sm mt-1">
-                    Preferences Status: <span className="font-medium">
-                      {statusData.submission_status.toUpperCase()}
-                    </span>
-                  </p>
+        {statusData ? (
+          <>
+            {/* Status Overview Card */}
+            <div className={`rounded-xl border-2 p-4 sm:p-6 ${getStatusColor(statusData.status)}`}>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-bold mb-1">
+                        Status: {getStatusMessage(statusData.status)}
+                      </h2>
+                      {statusData.submission_status && (
+                        <p className="text-sm opacity-90">
+                          Preferences: <span className="font-semibold capitalize">
+                            {statusData.submission_status}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {statusData.allocation_date && (
+                  <div className="text-right">
+                    <p className="text-sm opacity-75 mb-1">Allocated on:</p>
+                    <p className="font-semibold">
+                      {new Date(statusData.allocation_date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
                 )}
               </div>
-              {statusData.allocation_date && (
-                <div className="text-right text-sm opacity-70">
-                  <p>Allocated on:</p>
-                  <p>{new Date(statusData.allocation_date).toLocaleDateString()}</p>
-                </div>
-              )}
             </div>
-          </div>
 
-          {/* Course Allocations */}
-          {Object.keys(statusData.allocations || {}).length > 0 ? (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold">Your Course Allocations</h3>
-              
-              {/* Mandatory Courses */}
-              <div className="grid gap-4">
-                {['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'].map(category => {
-                  const allocation = statusData.allocations[category]
-                  return (
-                    <div key={category} className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-900">{category}</h4>
-                          {allocation ? (
-                            <>
-                              <p className="text-lg font-medium text-gray-800 mt-1">
-                                {allocation.course_name}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                Course ID: {allocation.course_id}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-red-600 font-medium">Not Allocated</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            allocation ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {allocation ? 'Allocated' : 'Not Allocated'}
-                          </span>
-                          {allocation?.preference_number && (
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPreferenceColor(allocation.preference_number)}`}>
-                              {allocation.preference_number}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Optional Courses */}
-              {(statusData.allocations['Honors'] || statusData.allocations['Minor']) && (
-                <div className="mt-6">
-                  <h4 className="text-lg font-semibold mb-3">Optional Courses</h4>
-                  <div className="grid gap-4">
-                    {['Honors', 'Minor'].map(category => {
-                      const allocation = statusData.allocations[category]
-                      if (!allocation) return null
-                      
-                      return (
-                        <div key={category} className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
-                          <div className="flex justify-between items-start mb-3">
+            {/* Course Allocations */}
+            {Object.keys(statusData.allocations || {}).length > 0 ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <h3 className="text-xl sm:text-2xl font-bold text-gray-900">Your Course Portfolio</h3>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                    {Object.keys(statusData.allocations).length} Courses
+                  </span>
+                </div>
+                
+                {/* Mandatory Courses Grid */}
+                <div className="grid gap-4 sm:gap-6">
+                  {['PECL1', 'PECL2', 'Program Elective', 'Open Elective', 'MDM'].map(category => {
+                    const allocation = statusData.allocations[category]
+                    return (
+                      <div key={category} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="p-4 sm:p-6">
+                          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                            {/* Course Info */}
                             <div className="flex-1">
-                              <h5 className="font-semibold text-gray-900">{category}</h5>
-                              <p className="text-lg font-medium text-gray-800 mt-1">
-                                {allocation.course_name}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                Course ID: {allocation.course_id}
-                              </p>
+                              <div className="flex items-center gap-3 mb-3">
+                                <span className="text-2xl">{getCategoryIcon(category)}</span>
+                                <div>
+                                  <h4 className="text-lg sm:text-xl font-bold text-gray-900">{category}</h4>
+                                  {allocation ? (
+                                    <>
+                                      <p className="text-base sm:text-lg font-semibold text-gray-800 mt-1">
+                                        {allocation.course_name}
+                                      </p>
+                                      <p className="text-sm text-gray-600 mt-1">
+                                        Course ID: <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                                          {allocation.course_id}
+                                        </span>
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <p className="text-red-600 font-semibold mt-1">Not Allocated</p>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                Allocated
+
+                            {/* Status Badges */}
+                            <div className="flex flex-row sm:flex-col gap-2 sm:items-end">
+                              <span className={`px-3 py-2 rounded-lg text-sm font-semibold border ${
+                                allocation ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
+                              }`}>
+                                {allocation ? '✅ Allocated' : '❌ Not Allocated'}
                               </span>
-                              {allocation.preference_number && (
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPreferenceColor(allocation.preference_number)}`}>
+                              {allocation?.preference_number && (
+                                <span className={`px-3 py-2 rounded-lg text-sm font-semibold border ${getPreferenceColor(allocation.preference_number)}`}>
                                   {allocation.preference_number}
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
-            </div>
-          ) : (
-            /* No Allocations */
-            <div className="bg-white rounded-lg shadow p-6 text-center">
-              <div className="text-gray-400 mb-4">
-                <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Course Allocations</h3>
-              <p className="text-gray-600">
-                {statusData.status === 'no_preferences' 
-                  ? 'Please submit your course preferences first.'
-                  : statusData.status === 'not_allocated'
-                  ? 'You were not included in the latest allocation. Make sure your preferences are confirmed.'
-                  : 'Course allocation has not been run yet. Please check back later.'
-                }
-              </p>
-            </div>
-          )}
 
-          {/* Instructions */}
-          <div className="mt-8 bg-blue-50 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 mb-2">Important Notes:</h4>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• <span className="font-medium">1st Choice</span> means you got your first preference</li>
-              <li>• <span className="font-medium">2nd Choice</span> means you got your second preference</li>
-              <li>• <span className="font-medium">Alternative</span> means you got an emergency allocation</li>
-              <li>• Allocation status is updated after each allocation run</li>
-              <li>• Contact admin if you believe there's an error in your allocation</li>
-            </ul>
+                {/* Optional Courses */}
+                {(statusData.allocations['Honors'] || statusData.allocations['Minor']) && (
+                  <div className="mt-8">
+                    <h4 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      🌟 Optional Courses
+                    </h4>
+                    <div className="grid gap-4">
+                      {['Honors', 'Minor'].map(category => {
+                        const allocation = statusData.allocations[category]
+                        if (!allocation) return null
+                        
+                        return (
+                          <div key={category} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div className="p-4 sm:p-6">
+                              <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <span className="text-2xl">{getCategoryIcon(category)}</span>
+                                    <div>
+                                      <h5 className="text-lg font-bold text-gray-900">{category}</h5>
+                                      <p className="text-base sm:text-lg font-semibold text-gray-800 mt-1">
+                                        {allocation.course_name}
+                                      </p>
+                                      <p className="text-sm text-gray-600 mt-1">
+                                        Course ID: <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                                          {allocation.course_id}
+                                        </span>
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-row sm:flex-col gap-2 sm:items-end">
+                                  <span className="px-3 py-2 rounded-lg text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                    ✅ Allocated
+                                  </span>
+                                  {allocation.preference_number && (
+                                    <span className={`px-3 py-2 rounded-lg text-sm font-semibold border ${getPreferenceColor(allocation.preference_number)}`}>
+                                      {allocation.preference_number}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* No Allocations State */
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 sm:p-12 text-center">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <svg className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">No Course Allocations</h3>
+                <p className="text-gray-600 text-base sm:text-lg max-w-md mx-auto leading-relaxed">
+                  {statusData.status === 'no_preferences' 
+                    ? 'Please submit your course preferences to get started with the allocation process.'
+                    : statusData.status === 'not_allocated'
+                    ? 'You were not included in the latest allocation. Please ensure your preferences are confirmed.'
+                    : 'Course allocation has not been run yet. Please check back later for updates.'
+                  }
+                </p>
+              </div>
+            )}
+
+            {/* Information Panel */}
+            <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 sm:p-6">
+              <h4 className="font-bold text-blue-900 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Important Information
+              </h4>
+              <div className="grid gap-3 sm:gap-4 text-sm text-blue-800">
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                  <p><span className="font-semibold">1st Choice</span> - You received your first preference for this course</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                  <p><span className="font-semibold">2nd Choice</span> - You received your second preference for this course</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-xs font-bold">A</span>
+                  <p><span className="font-semibold">Alternative</span> - You received an alternative allocation for this course</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">ℹ</span>
+                  <p>Your allocation status is updated automatically after each allocation run. Contact admin if you notice any discrepancies.</p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* No Data State */
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 sm:p-12 text-center">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 sm:w-10 sm:h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">No Status Data Available</h3>
+            <p className="text-gray-600 text-base sm:text-lg mb-6 max-w-md mx-auto">
+              Unable to load your allocation status. This could be due to:
+            </p>
+            <div className="bg-gray-50 rounded-lg p-4 mb-6 max-w-md mx-auto">
+              <ul className="text-left text-sm text-gray-600 space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="text-gray-400">•</span>
+                  <span>You haven't submitted your preferences yet</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-gray-400">•</span>
+                  <span>Your preferences are still being processed</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-gray-400">•</span>
+                  <span>There's a temporary system issue</span>
+                </li>
+              </ul>
+            </div>
+            <button
+              onClick={fetchAllocationStatus}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Try Again
+            </button>
           </div>
-        </>
-      ) : (
-        <div className="bg-white rounded-lg shadow p-6 text-center">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Status Data Available</h3>
-          <p className="text-gray-600 mb-4">
-            Unable to load your allocation status. This could be because:
-          </p>
-          <ul className="text-sm text-gray-600 mb-4 space-y-1">
-            <li>• You haven't submitted your preferences yet</li>
-            <li>• Your preferences haven't been processed</li>
-            <li>• There's a temporary system issue</li>
-          </ul>
-          <button
-            onClick={fetchAllocationStatus}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Try Again
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
