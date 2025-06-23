@@ -79,24 +79,40 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Configuration
+# CORS Configuration - Update this section
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
+    "http://localhost:3001",
     "https://course-allocation-frontend.vercel.app",  # Your Vercel domain
     "https://course-allocation-frontend-*.vercel.app",  # Preview deployments
-    "https://*.vercel.app",  # Allow all Vercel domains
+    "https://*.vercel.app",  # All Vercel domains
+    "https://your-actual-vercel-domain.vercel.app",  # Replace with your actual domain
     os.getenv("FRONTEND_URL", ""),
 ]
 
+# Filter out empty strings
 allowed_origins = [origin for origin in allowed_origins if origin]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Add OPTIONS and PATCH
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Cache-Control",
+        "Pragma",
+        "Expires",
+    ],
+    expose_headers=["*"],  # Allow all response headers to be exposed
+    max_age=86400,  # Cache preflight requests for 24 hours
 )
 
 # Database initialization

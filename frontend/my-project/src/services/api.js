@@ -26,13 +26,15 @@ export const tokenManager = {
   }
 };
 
-// Create axios instance
+// Create axios instance with better CORS handling
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
-  timeout: 30000, // 30 second timeout for Render cold starts
+  timeout: 30000,
+  withCredentials: false, // Set to false for CORS issues
 });
 
 // Request interceptor to add auth token
@@ -73,7 +75,15 @@ api.interceptors.response.use(
 export const authAPI = {
   login: async (credentials) => {
     try {
-      const response = await api.post('/auth/login', credentials);
+      console.log('🔐 Attempting login to:', `${API_BASE_URL}/auth/login`);
+      
+      const response = await api.post('/auth/login', credentials, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      });
+      
       const { access_token, user } = response.data;
       
       // Store token
@@ -81,15 +91,51 @@ export const authAPI = {
       
       return { token: access_token, user };
     } catch (error) {
+      console.error('Login API error:', error);
+      console.error('Error response:', error.response);
+      
+      if (error.response?.status === 400) {
+        throw new Error(error.response.data?.detail || 'Invalid credentials');
+      } else if (error.response?.status === 422) {
+        throw new Error('Please check your email and password format');
+      } else if (error.code === 'ERR_NETWORK') {
+        throw new Error('Network error. Please check your connection.');
+      }
+      
       throw error.response?.data || error;
     }
   },
 
   signup: async (userData) => {
     try {
-      const response = await api.post('/auth/register', userData);
+      console.log('📝 Attempting signup to:', `${API_BASE_URL}/auth/register`);
+      console.log('Signup data:', userData);
+      
+      const response = await api.post('/auth/register', userData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      });
+      
       return response.data;
     } catch (error) {
+      console.error('Signup API error:', error);
+      console.error('Error response:', error.response);
+      
+      if (error.response?.status === 400) {
+        throw new Error(error.response.data?.detail || 'Registration failed');
+      } else if (error.response?.status === 422) {
+        const details = error.response.data?.detail;
+        if (Array.isArray(details)) {
+          const errorMessages = details.map(d => d.msg).join(', ');
+          throw new Error(`Validation error: ${errorMessages}`);
+        }
+        throw new Error('Please check your input format');
+      } else if (error.code === 'ERR_NETWORK') {
+        throw new Error('Network error. Please check your connection.');
+      }
+      
       throw error.response?.data || error;
     }
   },
