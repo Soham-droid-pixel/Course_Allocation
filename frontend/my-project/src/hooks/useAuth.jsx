@@ -64,8 +64,6 @@ export function AuthProvider({ children }) {
       
       console.log('Signup response:', response);
       
-      // After successful signup, you might want to automatically log them in
-      // or just return the response for the component to handle
       return response;
     } catch (error) {
       console.error('Signup error in useAuth:', error);
@@ -84,7 +82,7 @@ export function AuthProvider({ children }) {
     user,
     loading,
     login,
-    signup, // Add signup to the context value
+    signup,
     logout,
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin',
