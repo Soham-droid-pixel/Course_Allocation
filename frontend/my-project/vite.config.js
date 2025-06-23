@@ -7,9 +7,23 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
+        target: process.env.VITE_API_URL || 'https://course-allocation-02wj.onrender.com',
+        changeOrigin: true,
+        secure: true,
+        timeout: 30000
       }
     }
-  }
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
+  },
+  define: {
+    global: 'globalThis',
+  },
 })

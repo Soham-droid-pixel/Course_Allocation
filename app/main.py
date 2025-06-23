@@ -83,7 +83,9 @@ app = FastAPI(
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
-    "http://localhost:3001",
+    "https://course-allocation-frontend.vercel.app",  # Your Vercel domain
+    "https://course-allocation-frontend-*.vercel.app",  # Preview deployments
+    "https://*.vercel.app",  # Allow all Vercel domains
     os.getenv("FRONTEND_URL", ""),
 ]
 

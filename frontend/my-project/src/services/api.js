@@ -1,8 +1,12 @@
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-// Use your existing API structure - it uses /api prefix
-const API_BASE_URL = 'http://localhost:8000';
+// Use deployed backend URL
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://course-allocation-02wj.onrender.com'
+  : 'http://localhost:8000';
+
+console.log('API Base URL:', API_BASE_URL);
 
 // Create axios instance
 const api = axios.create({
@@ -10,6 +14,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 second timeout for Render cold starts
 });
 
 // Token management - EXPORT THIS
