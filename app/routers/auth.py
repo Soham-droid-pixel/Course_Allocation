@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import timedelta, datetime, timezone
 import logging
@@ -17,9 +17,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
+# ADD OPTIONS HANDLERS FOR ALL AUTH ROUTES
+@router.options("/login")
+@router.options("/register")
+@router.options("/signup")
+@router.options("/me")
+@router.options("/test")
+async def auth_options():
+    """Handle OPTIONS requests for auth endpoints"""
+    logger.info("🔧 OPTIONS request received for auth endpoint")
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
+
+# REGISTER ENDPOINT (what your frontend calls)
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserSignup):
+    """Register a new user - alias for signup."""
+    return await signup_logic(user_data)
+
+# SIGNUP ENDPOINT (keeping for backward compatibility)
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user_data: UserSignup):
     """Register a new user."""
+    return await signup_logic(user_data)
+
+# SHARED SIGNUP LOGIC
+async def signup_logic(user_data: UserSignup):
+    """Shared signup logic for both /register and /signup endpoints."""
     try:
         logger.info(f"Signup attempt for email: {user_data.email}, role: {user_data.role}")
         
@@ -203,6 +234,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
         id=str(current_user.id),
         email=current_user.email,
         role=current_user.role,
+        roll_number=current_user.roll_number,
         is_active=current_user.is_active,
         created_at=current_user.created_at
     )

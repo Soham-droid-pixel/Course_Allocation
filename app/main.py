@@ -36,7 +36,7 @@ if not mongo_url or "localhost" in mongo_url:
 print(f"📋 Final MongoDB URL: {mongo_url[:50]}...")
 
 # Continue with your existing imports...
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 import logging
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,41 +79,41 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Configuration - Update this section
-allowed_origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:3001",
-    "https://course-allocation-frontend.vercel.app",  # Your Vercel domain
-    "https://course-allocation-frontend-*.vercel.app",  # Preview deployments
-    "https://*.vercel.app",  # All Vercel domains
-    "https://your-actual-vercel-domain.vercel.app",  # Replace with your actual domain
-    os.getenv("FRONTEND_URL", ""),
-]
-
-# Filter out empty strings
-allowed_origins = [origin for origin in allowed_origins if origin]
-
+# CORS Configuration - Updated and more permissive
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Add OPTIONS and PATCH
-    allow_headers=[
-        "Accept",
-        "Accept-Language",
-        "Content-Language",
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Origin",
-        "Cache-Control",
-        "Pragma",
-        "Expires",
-    ],
-    expose_headers=["*"],  # Allow all response headers to be exposed
-    max_age=86400,  # Cache preflight requests for 24 hours
+    allow_origins=["*"],  # Allow all origins for now
+    allow_credentials=False,  # Set to False when allowing all origins
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],
+    max_age=86400,
 )
+
+# Include routers FIRST before OPTIONS handler
+if auth_router:
+    app.include_router(auth_router)
+    logger.info("✅ Auth router included")
+
+if api_router:
+    app.include_router(api_router, prefix="/api")
+    logger.info("✅ API router included")
+
+# ADD GLOBAL OPTIONS HANDLER LAST (as fallback)
+@app.options("/{full_path:path}")
+async def options_handler(request: Request):
+    """Handle all OPTIONS requests as fallback"""
+    logger.info(f"🔧 Global OPTIONS request for: {request.url.path}")
+    
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
 
 # Database initialization
 @app.on_event("startup")
@@ -174,15 +174,6 @@ async def init_db():
         logger.error(f"❌ Database initialization failed: {str(e)}")
         pass
 
-# Include routers
-if auth_router:
-    app.include_router(auth_router)
-    logger.info("✅ Auth router included")
-
-if api_router:
-    app.include_router(api_router, prefix="/api")
-    logger.info("✅ API router included")
-
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {str(exc)}")
@@ -199,6 +190,7 @@ async def root():
         "database": "MongoDB Atlas",
         "mongodb_url_preview": (os.getenv("MONGODB_URL", "Not set"))[:30] + "...",
         "ssl_enabled": True,
+        "cors_enabled": True,
     }
 
 @app.get("/health")
@@ -209,6 +201,16 @@ async def health_check():
         "message": "API is operational",
         "mongodb_configured": bool(os.getenv("MONGODB_URL")),
         "ssl_enabled": True,
+    }
+
+# ADD TEST CORS ENDPOINT
+@app.get("/test-cors")
+async def test_cors():
+    """Test CORS functionality"""
+    return {
+        "message": "CORS is working!",
+        "timestamp": str(__import__('datetime').datetime.now()),
+        "headers_received": "OK"
     }
 
 if __name__ == "__main__":

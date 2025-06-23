@@ -3,14 +3,6 @@
   "name": "course-allocation-frontend",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://course-allocation-02wj.onrender.com/api/$1"
-    },
-    {
-      "source": "/auth/(.*)",
-      "destination": "https://course-allocation-02wj.onrender.com/auth/$1"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
