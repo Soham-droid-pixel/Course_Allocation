@@ -18,6 +18,9 @@ from beanie import init_beanie
 import motor.motor_asyncio
 from dotenv import load_dotenv
 
+# Load environment variables first
+load_dotenv()
+
 # Import your existing components with error handling
 try:
     from routers.auth import router as auth_router
@@ -43,8 +46,6 @@ except ImportError as e:
     StudentPreference = None
     AllocationResult = None
 
-load_dotenv()
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -55,10 +56,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Configuration
+# CORS Configuration - Add your production domains here
+allowed_origins = [
+    "http://localhost:3000",  # React dev server
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3001",  # Alternative React port
+    os.getenv("FRONTEND_URL", ""),  # Production frontend URL
+]
+
+# Filter out empty strings
+allowed_origins = [origin for origin in allowed_origins if origin]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,10 +78,37 @@ app.add_middleware(
 # Database initialization
 @app.on_event("startup")
 async def init_db():
-    """Initialize database connection."""
+    """Initialize MongoDB Atlas connection."""
     try:
-        mongo_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-        client = motor.motor_asyncio.AsyncIOMotorClient(mongo_url)
+        # Get MongoDB Atlas connection string from environment
+        mongo_url = os.getenv("MONGODB_URL") or os.getenv("MONGODB_URI")
+        
+        if not mongo_url:
+            logger.error("❌ MongoDB connection string not found in environment variables")
+            logger.error("Please set MONGODB_URL or MONGODB_URI in your .env file")
+            return
+        
+        # Log connection attempt (without showing full connection string for security)
+        logger.info(f"🔗 Attempting to connect to MongoDB Atlas...")
+        logger.info(f"Connection string preview: {mongo_url[:20]}...")
+        
+        # Create MongoDB client with Atlas-specific settings
+        client = motor.motor_asyncio.AsyncIOMotorClient(
+            mongo_url,
+            serverSelectionTimeoutMS=5000,  # 5 second timeout
+            connectTimeoutMS=10000,         # 10 second connection timeout
+            maxPoolSize=50,                 # Max connection pool size
+            retryWrites=True,               # Enable retryable writes
+            w="majority"                    # Write concern
+        )
+        
+        # Test the connection
+        await client.admin.command('ping')
+        logger.info("✅ Successfully connected to MongoDB Atlas")
+        
+        # Get database name from environment or use default
+        db_name = os.getenv("MONGODB_DB_NAME", "course_allocation")
+        database = client[db_name]
         
         # Initialize with available models
         models_to_init = []
@@ -83,16 +121,18 @@ async def init_db():
         
         if models_to_init:
             await init_beanie(
-                database=client.course_allocation,
+                database=database,
                 document_models=models_to_init
             )
-            logger.info(f"Database initialized successfully with {len(models_to_init)} models")
+            logger.info(f"✅ Database '{db_name}' initialized successfully with {len(models_to_init)} models")
+            logger.info(f"📋 Models initialized: {[model.__name__ for model in models_to_init]}")
         else:
-            logger.warning("No models available for database initialization")
+            logger.warning("⚠️ No models available for database initialization")
             
     except Exception as e:
-        logger.error(f"Database initialization failed: {str(e)}")
-        # Don't raise the exception - let the app start anyway
+        logger.error(f"❌ Database initialization failed: {str(e)}")
+        logger.error("Please check your MongoDB Atlas connection string and network connectivity")
+        # Don't raise the exception - let the app start anyway for debugging
         pass
 
 # Include routers that are available
@@ -116,15 +156,92 @@ async def generic_exception_handler(request: Request, exc: Exception):
 async def root():
     return {
         "message": "Course Allocation System API is running",
+        "version": "1.0.0",
+        "database": "MongoDB Atlas",
         "available_services": {
             "auth": auth_router is not None,
             "api": api_router is not None,
             "user_model": User is not None,
             "preference_model": StudentPreference is not None,
             "allocation_model": AllocationResult is not None
+        },
+        "environment": {
+            "mongodb_configured": bool(os.getenv("MONGODB_URL") or os.getenv("MONGODB_URI")),
+            "database_name": os.getenv("MONGODB_DB_NAME", "course_allocation"),
+            "cors_origins": len(allowed_origins)
         }
     }
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "message": "API is operational"}
+    """Health check endpoint with database connectivity status."""
+    try:
+        # Try to get MongoDB client if available
+        mongo_url = os.getenv("MONGODB_URL") or os.getenv("MONGODB_URI")
+        
+        if mongo_url:
+            client = motor.motor_asyncio.AsyncIOMotorClient(mongo_url)
+            await client.admin.command('ping')
+            db_status = "connected"
+        else:
+            db_status = "not_configured"
+            
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    return {
+        "status": "healthy",
+        "message": "API is operational",
+        "database_status": db_status,
+        "timestamp": str(os.times())
+    }
+
+# Optional: Add a test endpoint for database connectivity
+@app.get("/test-db")
+async def test_database():
+    """Test database connectivity."""
+    try:
+        mongo_url = os.getenv("MONGODB_URL") or os.getenv("MONGODB_URI")
+        
+        if not mongo_url:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "MongoDB connection string not configured"}
+            )
+        
+        client = motor.motor_asyncio.AsyncIOMotorClient(mongo_url)
+        
+        # Test connection
+        result = await client.admin.command('ping')
+        
+        # Get database info
+        db_name = os.getenv("MONGODB_DB_NAME", "course_allocation")
+        database = client[db_name]
+        collections = await database.list_collection_names()
+        
+        return {
+            "status": "success",
+            "message": "Database connection successful",
+            "database_name": db_name,
+            "collections": collections,
+            "ping_result": result
+        }
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Database connection failed: {str(e)}"
+            }
+        )
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    # Get port from environment or use default
+    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "0.0.0.0")
+    
+    logger.info(f"🚀 Starting server on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)
