@@ -166,11 +166,6 @@ class StudentAllocation(BaseModel):
             if course_id is not None and str(course_id).strip()
         }
     
-    @property
-    def student_id(self):
-        """Backward compatibility - return roll_number as student_id"""
-        return self.roll_number
-
 
 class CourseEnrollment(BaseModel):
     course_id: str

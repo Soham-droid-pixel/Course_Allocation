@@ -90,7 +90,8 @@ def allocate_mandatory_courses(
     
     for student in preferences:
         allocation = StudentAllocation(
-            roll_number=student.roll_number,  # Changed from student_id
+            roll_number=student.roll_number,
+            student_id=student.roll_number,  # SET THIS EXPLICITLY for backward compatibility
             name=student.name,
             allocations={},
             issues=[]
