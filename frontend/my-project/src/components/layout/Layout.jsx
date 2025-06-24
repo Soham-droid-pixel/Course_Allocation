@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth.jsx'
 import UserBadge from '../UserBadge'
 
 function Layout() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth() // Remove logout from here
   const location = useLocation()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -54,10 +54,6 @@ function Layout() {
   const roleInfo = user?.role === 'admin' 
     ? { title: 'Admin Panel', subtitle: 'System Administration', icon: '👨‍💼', gradient: 'from-purple-600 to-indigo-600' }
     : { title: 'Student Portal', subtitle: 'Academic Dashboard', icon: '🎓', gradient: 'from-blue-600 to-indigo-600' }
-
-  const handleLogout = () => {
-    logout()
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -172,16 +168,16 @@ function Layout() {
             </div>
           </div>
 
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
+          {/* Logout Button - Updated to use Link */}
+          <Link
+            to="/logout"
             className="w-full flex items-center gap-3 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
             <span>Logout</span>
-          </button>
+          </Link>
         </div>
       </aside>
 

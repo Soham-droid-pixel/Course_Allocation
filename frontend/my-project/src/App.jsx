@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
 import Layout from './components/layout/Layout'
 import Login from './pages/auth/Login'
 import Signup from './pages/auth/Signup'
+import Logout from './pages/auth/Logout'  // Add this import
+import NotFound from './pages/NotFound'   // Add this import
 import ProtectedRoute from './components/ProtectedRoute'
 import StudentDashboard from './pages/student/Dashboard'
 import StudentPreferences from './pages/student/Preferences'
@@ -13,7 +15,7 @@ import AdminReports from './pages/admin/Reports'
 import AdminAnalytics from './pages/admin/Analytics'
 import PreferencesAnalysis from './pages/admin/PreferencesAnalysis'
 import PreferenceConfirmation from './pages/student/PreferenceConfirmation'
-import SimpleConfirm from './components/SimpleConfirm.jsx' // Import your SimpleConfirm component
+import SimpleConfirm from './components/SimpleConfirm.jsx'
 
 // Component to handle role-based redirection
 function RoleBasedRedirect() {
@@ -55,6 +57,7 @@ function AppContent() {
       {/* Public Routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/logout" element={<Logout />} />  {/* Add logout route */}
       
       {/* Protected Routes with Layout */}
       <Route path="/" element={
@@ -113,8 +116,8 @@ function AppContent() {
         <Route index element={<RoleBasedRedirect />} />
       </Route>
 
-      {/* Catch all route */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* 404 Not Found - This catches all unmatched routes */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

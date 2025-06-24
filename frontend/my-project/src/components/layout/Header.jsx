@@ -1,10 +1,9 @@
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { logout, getUser } from '../../services/auth'
+import { useAuth } from '../../hooks/useAuth.jsx' // Updated import
 
 function Header() {
-  const navigate = useNavigate()
-  const user = getUser()
+  const { user } = useAuth() // Use useAuth hook instead
   const [currentTime, setCurrentTime] = useState(new Date())
   const [isScrolled, setIsScrolled] = useState(false)
 
@@ -22,11 +21,6 @@ function Header() {
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
 
   const getGreeting = () => {
     const hour = currentTime.getHours()
@@ -123,9 +117,9 @@ function Header() {
                 </div>
               </div>
 
-              {/* Logout Button */}
-              <button 
-                onClick={handleLogout}
+              {/* Logout Button - Updated to use Link */}
+              <Link 
+                to="/logout"
                 className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                   isScrolled 
                     ? 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500 shadow-md' 
@@ -136,7 +130,7 @@ function Header() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
                 <span className="hidden sm:inline">Logout</span>
-              </button>
+              </Link>
             </div>
           </div>
         </div>

@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { confirmPreferences } from '../../services/api';
+import { useAuth } from '../../hooks/useAuth';
 
 function PreferenceConfirmation() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [comments, setComments] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCourses, setSelectedCourses] = useState([]);
@@ -54,48 +56,61 @@ function PreferenceConfirmation() {
   const handleConfirm = async (confirm) => {
     try {
       setIsSubmitting(true);
+      console.log('📝 Starting confirmation process:', { confirm, user: user?.roll_number });
 
-      // Ensure all categories have valid choices with empty strings as defaults
-      const formattedPreferences = {};
-      for (const category of [
-        'PECL1', 'PECL2', 'Program Elective', 'Open Elective',
-        'Honors', 'Minor', 'MDM'
-      ]) {
-        const current = preferences.preferences[category] || {};
-        formattedPreferences[category] = {
-          choice1: current.choice1 || "",
-          choice2: current.choice2 || ""
-        };
+      if (!user || !user.roll_number) {
+        toast.error('Please log in to confirm preferences');
+        return;
       }
 
+      // FIXED: Use the correct data structure for the confirm API
       const confirmationData = {
-        student_id: studentId,
-        name: preferences.name || "Unknown",
-        preferences: formattedPreferences,
         confirm: Boolean(confirm),
         comments: comments || "",
-        status: confirm ? "confirmed" : "draft",
-        updated_at: new Date().toISOString()
+        // Only include preferences if we want to update them
+        ...(preferences?.preferences && {
+          preferences: preferences.preferences
+        })
       };
 
-      console.log('Sending confirmation data:', confirmationData);
-      await confirmPreferences(studentId, confirmationData);
+      console.log('📤 Sending confirmation data:', confirmationData);
+      
+      // FIXED: Call the API without student_id parameter (uses authenticated user)
+      const result = await confirmPreferences(confirmationData);
+      
+      console.log('✅ Confirmation result:', result);
       
       toast.success(confirm ? 
-        'Preferences confirmed successfully!' : 
-        'Preferences saved as draft'
+        'Preferences confirmed successfully! 🎉' : 
+        'Preferences saved as draft 📝'
       );
 
-      navigate(confirm ? '/student/dashboard' : '/student/preferences');
+      // Navigate based on action
+      if (confirm) {
+        navigate('/student/dashboard');
+      } else {
+        navigate('/student/preferences');
+      }
+      
     } catch (error) {
-      console.error('Confirmation error:', error);
-      toast.error('Failed to process confirmation. Please try again.');
+      console.error('❌ Confirmation error:', error);
+      toast.error(error.message || 'Failed to process confirmation. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (!preferences || !studentId) {
+  const handleReturnToEdit = () => {
+    // Navigate back to preferences with current data for editing
+    navigate('/student/preferences', {
+      state: {
+        editMode: true,
+        currentPreferences: preferences?.preferences
+      }
+    });
+  };
+
+  if (!preferences || !preferences.preferences) {
     return (
       <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
@@ -141,7 +156,7 @@ function PreferenceConfirmation() {
                 <div className="text-xs sm:text-sm text-blue-100">Categories</div>
               </div>
               <div className="px-3 py-1 bg-white/20 rounded-full text-sm font-medium">
-                {studentId}
+                {user?.roll_number || studentId}
               </div>
             </div>
           </div>
@@ -259,13 +274,13 @@ function PreferenceConfirmation() {
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Buttons - FIXED */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row gap-4 justify-end">
             <button
-              onClick={() => handleConfirm(false)}
+              onClick={handleReturnToEdit}
               disabled={isSubmitting}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-xl font-semibold hover:bg-gray-700 disabled:opacity-50 transition-all"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-xl font-semibold hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -275,7 +290,7 @@ function PreferenceConfirmation() {
             <button
               onClick={() => handleConfirm(true)}
               disabled={isSubmitting}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-blue-700 disabled:opacity-50 transition-all transform hover:scale-105"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 active:scale-95"
             >
               {isSubmitting ? (
                 <>

@@ -221,45 +221,74 @@ async def confirm_preferences(
     request_data: Dict[str, Any],
     current_user: User = Depends(get_current_student)
 ):
-    """Explicit flipped logic for confirmation"""
+    """Confirm preferences endpoint - fixed to handle frontend data structure"""
     try:
         roll_number = current_user.roll_number
         logger.info(f"=== PROCESSING CONFIRMATION for {roll_number} ===")
+        logger.info(f"Request data received: {request_data}")
         
         student = await StudentPreferenceDB.find_one({"roll_number": roll_number})
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
 
+        # Get the confirm flag from request
         confirm_flag = request_data.get("confirm", False)
-        logger.info(f"Raw confirm flag: {confirm_flag}")
+        logger.info(f"Confirm flag from frontend: {confirm_flag}")
         
-        # EXPLICIT FLIP - Since frontend sends opposite of what we need
-        actual_confirm = not confirm_flag  # Flip the boolean
-        logger.info(f"Flipped confirm flag: {actual_confirm}")
-        
-        if actual_confirm:  # Now this will be True when user wants to confirm
+        # Update status based on confirm flag
+        if confirm_flag:
             student.status = "confirmed"
             message = "Preferences confirmed successfully"
-            logger.info(f"Setting to CONFIRMED")
+            logger.info(f"Setting status to CONFIRMED")
         else:
-            student.status = "draft"
+            student.status = "draft"  
             message = "Preferences saved as draft"
-            logger.info(f"Setting to DRAFT")
+            logger.info(f"Setting status to DRAFT")
         
-        student.comments = request_data.get("comments", student.comments or "")
+        # Update other fields if provided
+        if "preferences" in request_data:
+            # Process preferences if they're included in the confirm request
+            processed_preferences = {}
+            raw_preferences = request_data.get("preferences", {})
+            
+            for category in CourseCategory:
+                category_key = category.value
+                category_data = raw_preferences.get(category_key, {})
+                
+                if isinstance(category_data, dict):
+                    processed_preferences[category_key] = {
+                        "choice1": str(category_data.get("choice1") or "").strip(),
+                        "choice2": str(category_data.get("choice2") or "").strip()
+                    }
+                else:
+                    processed_preferences[category_key] = {
+                        "choice1": "",
+                        "choice2": ""
+                    }
+            
+            student.preferences = processed_preferences
+        
+        # Update other fields
+        if "name" in request_data:
+            student.name = request_data.get("name", student.name)
+        
+        if "comments" in request_data:
+            student.comments = request_data.get("comments", student.comments or "")
+        
         student.updated_at = datetime.utcnow()
         await student.save()
         
-        logger.info(f"=== FINAL STATUS: {student.status.upper()} ===")
+        logger.info(f"=== SUCCESS: Status changed to {student.status.upper()} for {roll_number} ===")
         
         return {
             "message": message,
             "status": student.status,
-            "roll_number": roll_number
+            "roll_number": roll_number,
+            "confirm": confirm_flag
         }
         
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error in confirm_preferences: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/preferences/me")
@@ -1252,3 +1281,74 @@ async def set_confirmed(current_user: User = Depends(get_current_student)):
     except Exception as e:
         logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/courses")
+async def get_courses():
+    """Get available courses"""
+    courses_data = {
+        'PECL1': [
+            {'id': '25PECL13CE11', 'name': 'Image Processing Lab'},
+            {'id': '25PECL13CE12', 'name': 'Natural Language Processing Lab'},
+            {'id': '25PECL13CE13', 'name': 'IIOT Lab'},
+            {'id': '25PECL13CE14', 'name': 'Innovative Product Development Lab-Phase1'},
+            {'id': '25PECL13CE15', 'name': 'Open-Source Intelligence Lab'},
+        ],
+        'PECL2': [
+            {'id': '25PECL13CE21', 'name': 'Social Media Analytics Lab'},
+            {'id': '25PECL13CE22', 'name': 'Ethical Hacking Lab'},
+            {'id': '25PECL13CE23', 'name': 'DevOps Lab'},
+            {'id': '25PECL13CE24', 'name': 'Innovative Product Development Lab-Phase2'},
+            {'id': '25PECL13CE25', 'name': 'Explainable AI Lab'},
+            {'id': '25PECL13CE26', 'name': 'Software Testing Lab'},
+        ],
+        'Program Elective': [
+            {'id': '25PEC13CE11', 'name': 'Blockchain Technology'},
+            {'id': '25PEC13CE12', 'name': 'Deep Learning and Reinforcement Learning'},
+            {'id': '25PEC13CE13', 'name': 'Cyber Security'},
+            {'id': '25PEC13CE14', 'name': 'Big Data Analytics'},
+            {'id': '25PEC13CE15', 'name': 'Computer Graphics'},
+            {'id': '25PEC13CE16', 'name': 'HMI'},
+            {'id': '25PEC13CE17', 'name': 'Geographical Information Systems'},
+        ],
+        'Open Elective': [
+            {'id': 'OE1', 'name': 'Advanced Microprocessor'},
+            {'id': 'OE2', 'name': 'Internet of Things'},
+            {'id': 'OE3', 'name': 'E-Vehicle'},
+            {'id': 'OE4', 'name': 'Supply Chain Management'},
+            {'id': 'OE5', 'name': 'Design of Experiments'},
+            {'id': 'OE6', 'name': '3D Printing'},
+        ],
+        'Honors': [
+            {'id': 'H1', 'name': 'IoT Honors'},
+            {'id': 'H2', 'name': 'AI/ML Honors'},
+            {'id': 'H3', 'name': 'Data Science Honors'},
+            {'id': 'H4', 'name': 'Blockchain Honors'},
+            {'id': 'H5', 'name': 'Cybersecurity Honors'},
+        ],
+        'Minor': [
+            {'id': 'M1', 'name': 'Robotics Minor'},
+            {'id': 'M2', 'name': '3D Printing Minor'},
+        ],
+        'MDM': [
+            {'id': 'MDM1', 'name': 'Emotional and Spiritual Intelligence'},
+            {'id': 'MDM2', 'name': 'Health, Wellness and Psychology'},
+        ]
+    }
+    
+    return {"courses": courses_data}
+
+@router.get("/student/stats")
+async def get_student_stats_endpoint(current_user: User = Depends(get_current_student)):
+    """Get student-specific stats"""
+    try:
+        # Get the general stats and return them
+        stats = await get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Error fetching student stats: {e}")
+        return {
+            "totalSubmissions": 0,
+            "pendingAllocations": 0, 
+            "completedAllocations": 0,
+            "error": str(e)
+        }
