@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../hooks/useAuth.jsx';
 
@@ -10,8 +10,44 @@ function Login() {
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
+  const [loginAttempts, setLoginAttempts] = useState(0); // Track failed attempts
+  
+  const { login, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check if user came from logout or has auth error
+  const fromLogout = location.state?.fromLogout;
+  const hasLogoutError = location.state?.hasError;
+  const authError = location.state?.authError;
+  const errorMessage = location.state?.error;
+  const redirectPath = location.state?.from?.pathname;
+
+  // Show messages based on state
+  useEffect(() => {
+    if (fromLogout && !hasLogoutError) {
+      toast.success('Successfully logged out!', { id: 'logout-success' });
+    } else if (fromLogout && hasLogoutError) {
+      toast.info('Logout completed. Please log in again.', { id: 'logout-info' });
+    } else if (authError) {
+      toast.error('Please log in to continue', { id: 'auth-error' });
+    } else if (errorMessage) {
+      toast.error(errorMessage, { id: 'error-message' });
+    }
+
+    // Clear the state to prevent repeated messages
+    if (location.state) {
+      window.history.replaceState({}, document.title);
+    }
+  }, [fromLogout, hasLogoutError, authError, errorMessage, location.state]);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      const targetPath = redirectPath || (user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard');
+      navigate(targetPath, { replace: true });
+    }
+  }, [user, navigate, redirectPath]);
 
   const handleChange = (e) => {
     setFormData({
@@ -22,30 +58,70 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Basic validation
+    if (!formData.email || !formData.password) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (!formData.email.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      console.log('🔐 Attempting login with:', { email: formData.email });
+      
       const { user } = await login(formData);
       
-      console.log('Login successful, user:', user); // Debug log
+      // Reset login attempts on success
+      setLoginAttempts(0);
       
-      toast.success(`Welcome back, ${user.email}!`);
+      console.log('✅ Login successful, user:', user);
       
-      // Role-based navigation
-      if (user.role === 'admin') {
-        console.log('Redirecting to admin dashboard'); // Debug log
-        navigate('/admin/dashboard', { replace: true });
-      } else if (user.role === 'student') {
-        console.log('Redirecting to student dashboard'); // Debug log
-        navigate('/student/dashboard', { replace: true });
-      } else {
-        console.log('Unknown role, redirecting to root'); // Debug log
-        navigate('/', { replace: true });
-      }
+      toast.success(`Welcome back, ${user.email}! 🎉`);
+      
+      // Role-based navigation with fallback
+      const targetPath = redirectPath || (user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard');
+      
+      console.log(`🔄 Redirecting to: ${targetPath}`);
+      navigate(targetPath, { replace: true });
       
     } catch (error) {
-      console.error('Login error:', error);
-      toast.error(error.message || 'Login failed');
+      console.error('❌ Login error:', error);
+      
+      // Increment login attempts
+      setLoginAttempts(prev => prev + 1);
+      
+      // Handle different types of errors with helpful messages
+      if (error.message?.includes('Invalid credentials') || 
+          error.message?.includes('Invalid email or password') ||
+          error.message?.includes('401')) {
+        toast.error(`❌ Invalid email or password. ${loginAttempts >= 2 ? 'Please double-check your credentials.' : ''}`);
+      } else if (error.message?.includes('Account is disabled')) {
+        toast.error('❌ Your account has been disabled. Please contact support.');
+      } else if (error.message?.includes('Network error') || error.code === 'ERR_NETWORK') {
+        toast.error('❌ Network error. Please check your internet connection and try again.');
+      } else if (error.message?.includes('timeout')) {
+        toast.error('❌ Request timeout. Please try again.');
+      } else if (error.message?.includes('422')) {
+        toast.error('❌ Please check your email and password format.');
+      } else {
+        toast.error(error.message || '❌ Login failed. Please try again.');
+      }
+      
+      // Show helpful message after multiple failed attempts
+      if (loginAttempts >= 2) {
+        setTimeout(() => {
+          toast.info('💡 Having trouble? Make sure you\'re using the correct email and password. Contact support if you need help.', {
+            duration: 6000,
+            id: 'help-message'
+          });
+        }, 1000);
+      }
     } finally {
       setLoading(false);
     }
@@ -59,6 +135,49 @@ function Login() {
       </div>
       
       <div className="relative w-full max-w-md">
+        {/* Status Messages */}
+        {(fromLogout || authError || errorMessage || loginAttempts >= 3) && (
+          <div className="mb-6">
+            {fromLogout && (
+              <div className={`p-4 rounded-xl border ${hasLogoutError ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'} mb-4`}>
+                <p className={`text-sm font-medium ${hasLogoutError ? 'text-yellow-700' : 'text-green-700'}`}>
+                  ✅ {hasLogoutError ? 'Logout completed. Please log in again.' : 'Successfully logged out!'}
+                </p>
+              </div>
+            )}
+            
+            {authError && (
+              <div className="p-4 rounded-xl border bg-blue-50 border-blue-200 mb-4">
+                <p className="text-sm font-medium text-blue-700">
+                  🔐 Please log in to access that page
+                </p>
+              </div>
+            )}
+            
+            {errorMessage && (
+              <div className="p-4 rounded-xl border bg-red-50 border-red-200 mb-4">
+                <p className="text-sm font-medium text-red-700">
+                  ⚠️ {errorMessage}
+                </p>
+              </div>
+            )}
+            
+            {loginAttempts >= 3 && (
+              <div className="p-4 rounded-xl border bg-yellow-50 border-yellow-200 mb-4">
+                <p className="text-sm font-medium text-yellow-700 mb-2">
+                  🔍 Having trouble logging in?
+                </p>
+                <ul className="text-xs text-yellow-600 space-y-1">
+                  <li>• Double-check your email and password</li>
+                  <li>• Make sure Caps Lock is off</li>
+                  <li>• Try typing your password manually</li>
+                  <li>• Contact support if you need help</li>
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Main Card */}
         <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-2xl sm:rounded-3xl border border-white/20 overflow-hidden">
           {/* Header */}
@@ -68,8 +187,12 @@ function Login() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome Back</h2>
-            <p className="text-blue-100 text-sm sm:text-base">Course Allocation System</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+              {redirectPath ? 'Authentication Required' : 'Welcome Back'}
+            </h2>
+            <p className="text-blue-100 text-sm sm:text-base">
+              {redirectPath ? 'Please log in to continue' : 'Course Allocation System'}
+            </p>
           </div>
 
           {/* Form */}
@@ -96,6 +219,7 @@ function Login() {
                     onChange={handleChange}
                     placeholder="Enter your email"
                     className="w-full pl-10 pr-4 py-3 sm:py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm sm:text-base bg-gray-50 focus:bg-white"
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -121,13 +245,15 @@ function Login() {
                     onChange={handleChange}
                     placeholder="Enter your password"
                     className="w-full pl-10 pr-12 py-3 sm:py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm sm:text-base bg-gray-50 focus:bg-white"
+                    disabled={loading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    disabled={loading}
                   >
-                    <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       {showPassword ? (
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
                       ) : (
@@ -153,7 +279,7 @@ function Login() {
                     Signing in...
                   </div>
                 ) : (
-                  'Sign in'
+                  redirectPath ? 'Sign in to Continue' : 'Sign in'
                 )}
               </button>
             </form>
@@ -177,6 +303,15 @@ function Login() {
             >
               Sign up here
             </Link>
+
+            {/* Help Section */}
+            {loginAttempts >= 2 && (
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <p className="text-xs text-gray-500 text-center">
+                  Need help? Make sure you're using the correct credentials or contact support.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
