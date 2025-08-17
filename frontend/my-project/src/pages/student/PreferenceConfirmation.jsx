@@ -1,3 +1,43 @@
+/*// Import React hooks, routing utilities, toast notifications, API, and auth hook
+
+// Define PreferenceConfirmation component
+
+// Get location and navigation objects
+// Get logged-in user info from auth hook
+
+// State for comments input
+// State to track submission/loading
+// State to store selected courses from preferences
+
+// Extract preferences, studentId, and coursesData from navigation state
+
+// useEffect: Parse preferences to extract only selected courses for review
+
+// Function to get course details (name, credits) from coursesData
+
+// Function to return icon for each course category
+
+// Function to handle confirm action (submit or draft)
+// Set loading true
+// Validate user
+// Prepare confirmation data
+// Call confirmPreferences API
+// Show toast messages
+// Navigate based on action
+// Handle errors and finally set loading false
+
+// Function to return to edit preferences
+// Navigate back with current preferences in editMode
+
+// Conditional render: Show empty state if no preference data
+
+// Main render:
+// Header section: title, description, category count, student ID
+// Preference review cards: Show each selected category and choice 1/2 details
+// Comments section: Optional textarea for user input
+// Important info section: Warnings and tips about confirming preferences
+// Action buttons: Return to edit or Confirm selections with loading states
+*/
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';

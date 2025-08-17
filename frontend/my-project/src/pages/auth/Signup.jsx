@@ -1,3 +1,57 @@
+/*Purpose
+
+Allows users (students/admins) to create an account.
+
+Handles validation, API signup, and UI feedback.
+
+Provides password visibility toggle and real-time password checks.
+
+Key Features
+
+State
+
+loading: Shows spinner while request is in progress.
+
+showPassword & showConfirmPassword: Toggles visibility.
+
+formData: Stores email, password, confirmPassword, role, roll_number.
+
+Validation
+
+Passwords must match and be ≥6 characters.
+
+roll_number required for students.
+
+Form Submission
+
+Calls authAPI.signup.
+
+Shows toast messages for success or error.
+
+Redirects to /login after successful signup.
+
+UI Highlights
+
+Gradient card with modern styling.
+
+Role selection (student / admin).
+
+Conditional roll_number input for students.
+
+Password visibility toggles.
+
+Real-time password requirement checks.
+
+Loading spinner on submit button.
+
+Extras
+
+Link to login for existing users.
+
+Mobile-responsive with background pattern (hidden on small screens).
+
+Footer with copyright.
+*/
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';

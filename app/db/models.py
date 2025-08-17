@@ -1,3 +1,22 @@
+# 📌 This file defines MongoDB document models for the course allocation service.
+#
+# - StudentPreference → Stores student choices and metadata:
+#   • roll_number (unique ID), name, preferences, status, comments
+#   • created_at, updated_at, enrollment_status
+#   • Validator ensures all categories exist with clean string values
+#   • Stored in collection: "student_preferences"
+#
+# - AllocationResult → Stores allocation outcomes:
+#   • allocation_id (unique ID), student_allocations (per student), course_enrollments
+#   • created_at, status, issues
+#   • Indexed on created_at (descending) and status
+#   • Stored in collection: "allocation_results"
+#
+# 👉 Summary:
+# These models define the schema for student preferences and allocation results
+# and are used by Beanie ODM to interact with MongoDB.
+
+
 from beanie import Document
 from typing import Dict, List, Optional, Annotated
 from datetime import datetime

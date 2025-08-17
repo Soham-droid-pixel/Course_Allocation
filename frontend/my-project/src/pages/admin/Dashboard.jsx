@@ -1,3 +1,40 @@
+/*Purpose: This is the main dashboard for admins to manage and monitor course allocations.
+
+State managed:
+
+stats: stores totalSubmissions, pendingAllocations, completedAllocations.
+
+isAllocating: shows if allocation is currently running.
+
+currentTime: updates the current date & time every minute.
+
+Effects (useEffect):
+
+Fetches statistics on mount (fetchStats).
+
+Updates currentTime every minute for live display.
+
+Functions:
+
+fetchStats(): gets latest statistics from the server.
+
+handleTriggerAllocation(): triggers allocation process, handles success and errors, updates stats, shows loading spinner.
+
+getGreeting(): returns “Good Morning/Afternoon/Evening” based on current time.
+
+UI Structure:
+
+Welcome Header: shows greeting, date, time, and app info.
+
+Allocation Control Center: buttons to refresh stats and start allocation, with loading state.
+
+Statistics Cards: display totals for submissions, pending, and completed allocations.
+
+System Status & Quick Actions: shows allocation engine, database, student submission status, and shortcut buttons for analytics, reports, preferences, settings.
+
+Allocation Status Banner: shows spinner & message while allocation is in progress.
+
+Important Notes: key instructions for admins before running allocations.*/
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { triggerAllocation, downloadReport, getStats } from '../../services/api'

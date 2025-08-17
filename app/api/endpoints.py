@@ -1,3 +1,53 @@
+"""This file contains all the API endpoints for a Course Allocation System that helps students submit their course preferences and administrators manage course allocations.
+
+Key Components
+🔧 Service Dependencies & Error Handling
+Gracefully handles missing services (database, allocation engine, reports)
+Provides fallback functionality when services are unavailable
+Imports all required models and utilities with error catching
+🔐 Authentication System
+Uses JWT-based authentication with role-based access (student/admin)
+Protects endpoints with get_current_user, get_current_admin, get_current_student
+All preference operations require user authentication
+📝 Student Preference Endpoints
+POST /api/preferences/submit - Students submit their course choices
+POST /api/preferences/confirm - Students confirm their final selections
+GET /api/preferences/me - Students view their submitted preferences
+GET /api/student/me/status - Students check their allocation status
+🎯 Course Allocation Engine
+POST /api/allocate - Triggers the allocation algorithm for confirmed students
+GET /api/allocations/latest - Retrieves the most recent allocation results
+Uses roll numbers as primary identifiers (not student IDs)
+📊 Statistics & Analytics
+GET /api/stats - System-wide statistics (submissions, allocations)
+GET /api/admin/summary - Admin dashboard with preference counts
+GET /api/admin/preferences-analysis - Detailed course demand analysis
+📋 Report Generation
+GET /api/download/{allocation_id} - Downloads allocation reports in Excel/CSV
+Generates temporary files with automatic cleanup
+Includes student allocations and course enrollment data
+🔍 Course Data Management
+GET /api/courses - Returns available courses by category (PECL1, PECL2, etc.)
+Built-in course name mapping for readable display
+Supports 7 categories: PECL1, PECL2, Program Elective, Open Elective, Honors, Minor, MDM
+🛠️ Utility & Debugging
+GET /api/health - Basic health check
+GET /api/status - Service availability status
+GET /api/test - Comprehensive endpoint testing
+Legacy endpoint support for backward compatibility
+💾 Database Operations
+Uses MongoDB with Beanie ODM for data persistence
+Direct MongoDB queries for complex analytics
+Handles document validation errors gracefully
+Supports both new (roll_number) and legacy (student_id) identifiers
+🔄 Data Flow
+Students submit preferences → Stored as "draft"
+Students confirm preferences → Status changes to "confirmed"
+Admin triggers allocation → Algorithm processes confirmed students
+Results stored → Students can view allocation status
+Reports generated → Admin downloads allocation results
+"""
+
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from typing import List, Dict, Any, Optional

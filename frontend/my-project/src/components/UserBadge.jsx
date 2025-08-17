@@ -1,4 +1,16 @@
+/*UserBadge is a small component to display the logged-in user info.
 
+It gets the user and logout function from useAuth.
+
+If no user is logged in, it renders nothing.
+
+Shows the user’s email and role, with a colored dot:
+
+Blue for admin, green for others.
+
+Provides a Logout button that calls the logout function when clicked.
+
+It’s basically a visual badge showing who’s logged in and allowing quick logout.*/
 import React from 'react';
 import { useAuth } from '../hooks/useAuth.jsx';
 

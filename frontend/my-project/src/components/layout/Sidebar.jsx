@@ -1,3 +1,24 @@
+// Sidebar Component
+// - Responsive navigation menu for students & admins
+// - Uses useAuth hook to detect logged-in user and role
+// - Renders different links for Student vs Admin
+// - Updates current time every minute (shown in footer)
+// - Mobile behavior:
+//    • Full overlay + slide-in drawer
+//    • Closes automatically on navigation or overlay click
+// - Header section:
+//    • Gradient background (role-based color)
+//    • Displays role icon, role title, subtitle
+//    • Shows user email and roll number
+// - Navigation section:
+//    • Lists role-specific links with icons + descriptions
+//    • Active link gets gradient background, highlight, and dot
+// - Footer section:
+//    • Shows date + time in card style
+//    • Logout button (navigates to /logout route)
+//    • Quick system status indicator (online pulse animation)
+// - Fully styled with TailwindCSS, transitions, gradients & shadows
+
 import { NavLink, Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth.jsx' // Updated import

@@ -1,3 +1,48 @@
+# -----------------------------------------------------------------------------
+# SECURITY UTILS MODULE
+# -----------------------------------------------------------------------------
+# - Provides password hashing, verification, and JWT-based authentication helpers.
+# - Loads secret key from environment (.env) file for token signing.
+# - Uses bcrypt for password security and HS256 for JWT.
+# - Handles error cases gracefully with FastAPI's HTTPException.
+# -----------------------------------------------------------------------------
+
+# Imports
+# from datetime import datetime, timedelta  -> For token expiry
+# from typing import Optional, Dict, Any    -> Type hints
+# import jwt                                -> JWT encoding/decoding
+# from passlib.context import CryptContext  -> Secure password hashing
+# from fastapi import HTTPException, status -> Standardized error responses
+# import os                                 -> Environment variable access
+# from dotenv import load_dotenv            -> Load .env file securely
+
+# -----------------------------------------------------------------------------
+# CONFIGURATION
+# -----------------------------------------------------------------------------
+# SECRET_KEY -> Taken from .env; fallback is insecure default (should be overridden).
+# ALGORITHM  -> HS256 (symmetric encryption).
+# ACCESS_TOKEN_EXPIRE_MINUTES -> Default expiry time for access tokens.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# PASSWORD MANAGEMENT
+# -----------------------------------------------------------------------------
+# verify_password(plain, hashed) -> Returns True if password matches hash.
+# get_password_hash(password)    -> Validates and securely hashes a new password.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# TOKEN MANAGEMENT
+# -----------------------------------------------------------------------------
+# create_access_token(data, expires_delta) -> Encodes data into JWT with expiry.
+# verify_token(token)                      -> Validates JWT, handles expiry/invalid.
+# -----------------------------------------------------------------------------
+# Errors:
+#   - ExpiredSignatureError -> Returns 401 Unauthorized ("Token has expired").
+#   - PyJWTError -> Returns 401 Unauthorized ("Could not validate credentials").
+# -----------------------------------------------------------------------------
+
+
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import jwt

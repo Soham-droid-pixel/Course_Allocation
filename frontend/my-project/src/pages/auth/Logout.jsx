@@ -1,3 +1,36 @@
+/*Purpose
+
+Securely logs out the user.
+
+Clears localStorage & sessionStorage.
+
+Shows status messages and redirects to login.
+
+Handles success, processing, and error states.
+
+Key Features
+
+State
+
+logoutStatus: 'processing' | 'success' | 'error'.
+
+useEffect
+
+Performs logout asynchronously.
+
+Adds a short delay for UX.
+
+Shows success/error toast messages.
+
+Redirects to /login with state (fromLogout, hasError).
+
+UI
+
+Status icon + message depending on logoutStatus.
+
+Animated progress bar.
+
+Manual "Go to Login Now" button on error.*/
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';

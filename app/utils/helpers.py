@@ -1,3 +1,31 @@
+# Import necessary typing utilities for type hints (Dict, List, Any, Optional)
+# Import json for deep copy and sanitization
+# Import logging for logging errors/info
+# Import StudentPreference and CourseCategory models from api
+
+# Configure logger for course_allocation_service
+
+# Function: sanitize_input
+# - Purpose: Clean and validate input data safely
+# - Args: input_data (dictionary of raw input)
+# - Returns: sanitized deep-copied version of the input
+# - Implementation: Uses JSON deep copy to avoid mutating original data
+# - Note: Placeholder for extra validation logic
+
+# Function: validate_student_preferences
+# - Purpose: Validate list of student preferences
+# - Args: preferences (list of StudentPreference objects)
+# - Returns: list of validation error messages
+# - Implementation details:
+#   - Initializes errors list
+#   - For each student preference:
+#       - Checks if MDM course is chosen (mandatory rule)
+#       - Defines required categories (PECL1, PECL2, PROGRAM_ELECTIVE, OPEN_ELECTIVE)
+#       - For each required category: ensures both choice1 and choice2 are provided
+#       - If validation fails, adds error message with student_id and missing requirement
+# - Finally returns list of all error messages
+
+
 from typing import Dict, List, Any, Optional
 import json
 import logging

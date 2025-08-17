@@ -1,3 +1,155 @@
+# ----------------------------
+# MODULE: Allocation Report Generator
+# PURPOSE:
+#   This module generates allocation reports (Excel/CSV) for student course allocations.
+#   It produces detailed sheets for:
+#     - Student allocations (who got what course)
+#     - Course enrollments (how many students in each course)
+#     - Summary statistics (allocation success, active vs canceled courses, etc.)
+#     - Issues & warnings (students with allocation problems)
+#
+# AUDIENCE:
+#   Junior developers or faculty support staff maintaining or extending allocation reporting.
+#
+# KEY FEATURES:
+#   - Supports both Excel and CSV export.
+#   - Handles backward compatibility (student_id vs roll_number).
+#   - Creates summary statistics for quick review.
+#   - Ensures clear reporting for teachers/admins.
+# ----------------------------
+
+
+# --- IMPORTS ---
+# sys & pathlib: manage paths for module imports
+# pandas: used for building tabular reports (Excel/CSV)
+# datetime: timestamps for filenames and logs
+# os: filesystem operations (if needed)
+# logging: error/info logging
+# typing, Enum: type hints and controlled options
+# db.models & api.models: project-specific models used for allocations
+# ----------------------------
+
+
+# --- LOGGER CONFIGURATION ---
+# Sets up a logger called "course_allocation_service" for tracking errors and info.
+# Logging is critical for debugging when reports fail or data is missing.
+# ----------------------------
+
+
+# --- ENUM: DownloadFormat ---
+# Defines allowed download formats (Excel or CSV).
+# Enum ensures only supported formats are used.
+# ----------------------------
+
+
+# --- FUNCTION: generate_allocation_report ---
+# PURPOSE:
+#   Entry point for generating allocation reports.
+#   Accepts either:
+#     - An AllocationResponse object (structured data)
+#     - A file path string (legacy compatibility)
+#
+# STEPS:
+#   1. If a string is provided → return it directly (assume pre-generated report).
+#   2. Otherwise:
+#        - Create a temp_reports directory (if not exists).
+#        - Generate unique timestamp-based filename.
+#        - Call generate_simple_allocation_report() with proper output path.
+#
+# RETURNS:
+#   File path of generated report (Excel/CSV).
+# ----------------------------
+
+
+# --- FUNCTION: generate_simple_allocation_report ---
+# PURPOSE:
+#   Generate a teacher-friendly allocation report in Excel/CSV.
+#
+# INPUT:
+#   - allocation (AllocationResponse)
+#   - output_path (str)
+#   - format ("excel" or "csv")
+#
+# OUTPUT:
+#   - Returns path to generated file
+#
+# MAJOR SECTIONS:
+#   1. STUDENT ALLOCATION SUMMARY
+#      - Iterates over all students.
+#      - Extracts roll_number (preferred) or student_id (fallback).
+#      - Records allocations for PECL1, PECL2, Program Elective, Open Elective, MDM, Honors, Minor.
+#      - Logs issues if student has missing/invalid data.
+#
+#   2. COURSE ENROLLMENT SUMMARY
+#      - Iterates over all courses in allocation.course_summaries.
+#      - Determines category (PECL, Open Elective, etc.).
+#      - Checks enrolled student count vs minimum required.
+#      - Marks status as "Active" or "Canceled".
+#      - Keeps a preview of enrolled students (first 10 shown, rest summarized).
+#
+#   3. SUMMARY STATISTICS
+#      - Total students, completed allocations.
+#      - Percentage allocation success by category (PECL1, PECL2, etc.).
+#      - Honors/Minor enrollments.
+#      - Active vs Canceled course counts.
+#      - Teacher notes & timestamp.
+#
+#   4. OUTPUT
+#      - Calls either Excel or CSV generator functions.
+#
+# ERROR HANDLING:
+#   - Logs any error with available student_data columns for debugging.
+# ----------------------------
+
+
+# --- FUNCTION: get_course_category ---
+# PURPOSE:
+#   Returns the course category (PECL1, PECL2, Program Elective, Open Elective, MDM, Honors, Minor)
+#   based on the course ID prefix.
+#   Falls back to "Unknown" if no match found.
+# ----------------------------
+
+
+# --- FUNCTION: get_course_name ---
+# PURPOSE:
+#   Maps known course IDs to readable names (dictionary lookup).
+#   Falls back to raw course_id if unknown.
+#
+# NOTE:
+#   Keep this dictionary updated when new courses are added.
+# ----------------------------
+
+
+# --- FUNCTION: _generate_excel_report ---
+# PURPOSE:
+#   Generate a multi-sheet Excel file with the following sheets:
+#     - "Student Allocations" → full student allocation data
+#     - "Course Enrollments" → course enrollment breakdown
+#     - "Summary Statistics" → summary metrics and notes
+#     - "Issues & Warnings" → students with allocation issues (if any)
+#
+# IMPLEMENTATION:
+#   - Uses pandas ExcelWriter with openpyxl engine.
+#   - Handles both roll_number and student_id for backward compatibility.
+#
+# ERROR HANDLING:
+#   Logs and raises any exceptions.
+# ----------------------------
+
+
+# --- FUNCTION: _generate_csv_report ---
+# PURPOSE:
+#   Generate a simple CSV file (student allocations only).
+#   Lighter than Excel version (no multi-sheet support).
+#
+# IMPLEMENTATION:
+#   - Creates one CSV file with student_data table.
+#
+# ERROR HANDLING:
+#   Logs and raises any exceptions.
+# ----------------------------
+
+
 import sys
 from pathlib import Path
 app_dir = Path(__file__).parent.parent

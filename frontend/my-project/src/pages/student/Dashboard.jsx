@@ -1,3 +1,48 @@
+/*// Import React hooks and routing utilities
+// Import toast notifications
+// Import API call and authentication hook
+
+// Define StudentDashboard component
+
+// Get logged-in user info from auth hook
+
+// State to store allocated courses
+// State to handle loading spinner
+// State to store dashboard statistics (total allocated, preference counts, status flags)
+// State to track current time
+
+// useEffect: Update currentTime every minute
+
+// useEffect: Fetch student data once user is available
+
+// Async function to fetch student's allocation status
+// Set loading true at start
+// Call API to get allocation status
+// Initialize courses array and stats object
+// Loop through allocations to extract course info and count preferences
+// Update allocatedCourses and dashboardStats states
+// Handle API errors with toast
+// Set loading false at end
+
+// Function to map courseId to extra info (difficulty, credits, tips, icon)
+
+// Function to return greeting based on current time
+
+// Function to return badge color based on course difficulty
+
+// Function to return badge color based on preference number
+
+// Conditional render: Show loading spinner if loading
+
+// Conditional render: Show login prompt if no user
+
+// Render main dashboard:
+// Header with greeting, date/time, and status
+// Quick action buttons (Preferences, Status, Refresh, Schedule, Study Groups)
+// Statistics cards (total courses, first choices, success rate, total credits)
+// Course portfolio: List of allocated courses with icon, info, preference badge, and study tips
+// Empty state: Prompt user to submit preferences or wait for allocation
+*/
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-hot-toast'

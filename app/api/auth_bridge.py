@@ -2,6 +2,17 @@
 Bridge file to connect existing API endpoints with new authentication system.
 This file provides auth dependencies that can be used in your existing endpoints.
 """
+"""Purpose → Connects existing API endpoints with new JWT authentication.
+
+HTTPBearer → Extracts Authorization: Bearer <token> from requests.
+
+get_current_user → Validates token, fetches user from DB, checks if active. Returns user object.
+
+Errors → Returns 401 if token invalid/user not found/disabled.
+
+get_current_admin / get_current_student → Extra role checks (admin or student), else 403.
+
+require_auth / require_admin / require_student → Simple decorators for endpoints to enforce authentication/roles quickly."""
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -80,3 +91,4 @@ def require_admin():
 def require_student():
     """Simple student decorator for existing endpoints."""
     return Depends(get_current_student)
+

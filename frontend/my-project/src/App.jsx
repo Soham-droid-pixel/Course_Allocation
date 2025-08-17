@@ -1,3 +1,98 @@
+/*
+==================== APP.JSX EXPLANATION ====================
+
+1. Purpose:
+   - Main entry point for React frontend routing.
+   - Handles public routes (login/signup), protected routes (student/admin), role-based redirects, and 404 pages.
+   - Integrates global authentication context and toast notifications.
+
+2. Imports:
+   - react-router-dom: Routing and navigation (Routes, Route, Navigate).
+   - react-hot-toast: Toast notifications.
+   - AuthProvider/useAuth: Authentication context provider and hook.
+   - Layout: Shared layout for authenticated users.
+   - Page components: Login, Signup, Logout, dashboards, preferences, analytics, etc.
+   - ProtectedRoute: Component to protect routes based on authentication and role.
+
+3. RoleBasedRedirect Component:
+   - Handles default redirects based on logged-in user role.
+   - Loading state: Shows spinner while user info is loading.
+   - If no user: Redirects to /login.
+   - If admin: Redirects to /admin/dashboard.
+   - If student: Redirects to /student/dashboard.
+   - Invalid role: Redirects to /login with error state.
+
+4. ErrorFallback Component:
+   - UI displayed when an error boundary catches an unexpected error.
+   - Shows a red error icon, message, and two action buttons:
+     - "Try Again": Calls resetErrorBoundary to retry.
+     - "Go to Login": Redirects user to login page.
+   - Provides user-friendly feedback for unexpected crashes.
+
+5. AppContent Component:
+   - Defines all routes of the app using <Routes> and <Route>.
+   - Public Routes:
+     - /login → Login page
+     - /signup → Signup page
+     - /logout → Logout page
+   - Protected Routes wrapped in Layout:
+     - Uses ProtectedRoute to enforce authentication and role-based access.
+     - Student Routes:
+       - /student/dashboard → StudentDashboard
+       - /student/preferences → StudentPreferences
+       - /student/preferences/confirm → PreferenceConfirmation
+       - /student/status → StudentStatus
+     - Admin Routes:
+       - /admin/dashboard → AdminDashboard
+       - /admin/reports → AdminReports
+       - /admin/analytics → AdminAnalytics
+       - /admin/preferences-analysis → PreferencesAnalysis
+     - Miscellaneous:
+       - /simple-confirm → SimpleConfirm
+       - Default route "/" → RoleBasedRedirect (redirects based on role)
+   - 404 Route:
+     - "*" → NotFound component to catch all unmatched routes.
+
+6. ProtectedRoute Usage:
+   - Ensures only authenticated users can access certain routes.
+   - Supports optional role-based access using `requiredRole` prop.
+
+7. Toaster Configuration:
+   - Provides global toast notifications.
+   - Position: top-right
+   - Duration & colors:
+     - Default: 4000ms, dark background
+     - Success: green (#10B981), 3000ms
+     - Error: red (#EF4444), 5000ms
+
+8. App Component:
+   - Wraps everything with AuthProvider to provide authentication context.
+   - Renders AppContent and Toaster.
+   - Provides global state, routing, and toast notifications for the app.
+
+9. Design Benefits:
+   - Centralized route management.
+   - Role-aware routing: Student/Admin separation.
+   - ProtectedRoute ensures security.
+   - User-friendly feedback with loading spinners and error boundaries.
+   - Global toast notifications for feedback on actions.
+
+10. Best Practices Implemented:
+    - Lazy handling of user loading state.
+    - Role-based redirects instead of hardcoding paths.
+    - Catch-all 404 page for unmatched routes.
+    - Reusable Layout component for consistent UI.
+    - Separation of public vs protected routes.
+    - Easy-to-extend route structure for future features.
+
+11. Summary:
+    - App.jsx handles routing, authentication context, error handling, and toast notifications.
+    - Provides a clean, scalable structure for student/admin-based course allocation system.
+    - Ensures a smooth UX with spinners, error boundaries, and toast feedback.
+
+========================================================================
+*/
+
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'

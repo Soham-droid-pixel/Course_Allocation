@@ -1,3 +1,33 @@
+
+# This file defines all Pydantic models and enums used in the course allocation system.
+
+# Enums:
+# - CourseCategory → Different course types (PECL1, PECL2, Electives, MDM, etc.).
+# - PreferenceStatus → Status of student preference (draft, submitted, confirmed).
+# - DownloadFormat → Report export format (excel / csv).
+
+# Models:
+# - CourseChoice → Holds 2 choices (choice1, choice2) for a course category.
+# - PreferenceBase → Base model with student_id, name, and preferences (MDM choice1 is mandatory).
+# - StudentPreference → Full student preference record with roll_number, preferences, status, comments, timestamp.
+# - AllocationRequest → List of students to allocate; validates MDM choice for confirmed students.
+# - StudentAllocation → Stores allocation results for each student (courses assigned + issues if any).
+# - CourseEnrollment → Stores details of a course (capacity, enrolled students, list of roll_numbers).
+# - AllocationResponse → Final output after allocation (student allocations, course summaries, issues).
+# - PreferenceResponse → Cleaned response model for showing student preferences.
+# - PreferenceConfirmation → Model for confirming preferences (confirm flag + status).
+# - ReportRequest → Input model for downloading reports (allocation_id + format).
+# - HealthCheck → Simple health check response with status, timestamp, version.
+# - AllocationSummary → Response when no allocation exists.
+# - ErrorResponse → Standard error response format.
+
+# 👉 Summary:
+# These models handle input validation, cleaning, and output formatting
+# for the elective/course allocation system.
+# Juniors will mainly use these models in API endpoints
+# to validate data, ensure MDM choice is mandatory, and return structured responses.
+
+
 from pydantic import BaseModel, Field, validator, root_validator
 from typing import List, Dict, Optional, Union
 from enum import Enum

@@ -1,3 +1,76 @@
+/*Purpose
+
+Allows users (admin or student) to log in securely, handle multiple error types, show helpful messages after failed attempts, and redirect based on role or previous page.
+
+State
+
+formData → { email, password }
+
+loading → shows spinner during login process.
+
+showPassword → toggle password visibility.
+
+loginAttempts → tracks number of failed login attempts to show hints.
+
+Hooks
+
+useAuth() → provides login function and user object.
+
+useNavigate() → navigation after login.
+
+useLocation() → gets state from redirect, logout, or errors.
+
+useEffect() →
+
+Shows success/info/error messages based on location.state.
+
+Redirects already authenticated users to /admin/dashboard or /student/dashboard depending on role.
+
+Event Handlers
+
+handleChange(e) → updates formData as user types.
+
+handleSubmit(e) → validates inputs, calls login(formData), handles errors:
+
+Invalid credentials
+
+Disabled account
+
+Network or timeout errors
+
+Format errors (422)
+
+Provides hints after 2+ failed attempts.
+
+Password toggle → showPassword changes input type between "text" and "password".
+
+UI Structure
+
+Background & Pattern → gradient with optional grid for desktop.
+
+Status Messages → shows logout success, auth error, general error, or login hints after 3+ failed attempts.
+
+Main Card → rounded, shadowed card containing:
+
+Header: icon + greeting
+
+Form: email + password + submit button
+
+Divider + Sign-up link
+
+Help section after multiple failed attempts
+
+Footer → copyright text.
+
+Highlights
+
+Role-based redirect: admin vs student.
+
+Detailed error handling: multiple toast messages depending on issue.
+
+Dynamic hints: provides support info after repeated failures.
+
+UX touches: smooth focus states, hover/active scaling, loading spinner, show/hide password.*/
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';

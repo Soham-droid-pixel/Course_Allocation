@@ -1,3 +1,16 @@
+# 📌 This file sets up logging for the course allocation service.
+#
+# - setup_logging() → Creates and configures a logger:
+#   • Logger name: "course_allocation_service"
+#   • Log level comes from settings.LOG_LEVEL (e.g., INFO, DEBUG, WARNING).
+#   • Logs are written to console (stdout).
+#   • Format includes timestamp, logger name, level, and message.
+#
+# 👉 Summary:
+# Call setup_logging() at app startup to get a ready-to-use logger.
+# This ensures consistent logging across the project.
+
+
 import logging
 import sys
 from app.core.config import settings

@@ -1,3 +1,38 @@
+/*Purpose: Allows admins to view and download the latest course allocation report in Excel or CSV format.
+
+State managed:
+
+selectedFormat: either "excel" or "csv".
+
+loading: shows download progress.
+
+error: stores any error messages.
+
+allocationId: the latest allocation identifier.
+
+currentTime: updates every minute for live date/time display.
+
+Effects (useEffect):
+
+Updates currentTime every minute.
+
+Fetches the latest allocation on mount using fetchLatestAllocation().
+
+Functions:
+
+fetchLatestAllocation(): gets the most recent allocation ID from server and updates allocationId or shows error if none found.
+
+handleDownload(): triggers report download in the selected format. Shows loading spinner and handles errors (like incomplete allocations).
+
+getGreeting(): returns “Good Morning/Afternoon/Evening” based on the current time.
+
+UI Structure:
+
+Header: greeting, current date, and report center icon.
+
+Report Card: shows format selection (Excel/CSV) and action buttons to download or refresh.
+
+Status Messages: shows green success box if allocation found, red error box if issues occur.*/
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { downloadReport, getLatestAllocation } from '../../services/api'

@@ -1,3 +1,14 @@
+// Header Component
+// - Shows app title, user info, and logout button
+// - Uses useAuth hook to get logged-in user
+// - Tracks current time (updates every minute)
+// - Changes style when page is scrolled
+// - Displays greeting + role (Admin/Student)
+// - Responsive: detailed info on desktop, compact on mobile
+// - Includes animated logo + gradient effects
+// - Handles logout via Link navigation
+
+
 import { Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth.jsx' // Updated import

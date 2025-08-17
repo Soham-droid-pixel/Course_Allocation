@@ -1,3 +1,62 @@
+/* 
+Comments for Preferences Component:
+
+1. CourseCategory & COURSES:
+   - `CourseCategory` defines all the categories of courses.
+   - `COURSES` is an object mapping each category to an array of available courses with id, name, and credits.
+
+2. State Initialization:
+   - `preferences`: Stores user-selected courses per category. Initialized with existing preferences if available, otherwise empty arrays per category.
+   - `currentStep`: Tracks which category/step the user is on (currently not used for step-based navigation, but can be extended).
+   - `showSummary`: Boolean to toggle between course selection view and summary view.
+
+3. Helper Functions:
+   - `getCategoryIcon(category)`: Returns an emoji icon for each course category.
+   - `getCategoryDescription(category)`: Returns a short description for each course category.
+   - `getTotalSelections()`: Counts total selected courses across all categories.
+   - `getProgressPercentage()`: Calculates percentage of categories with at least one selection.
+
+4. Validation Rules (`validatePreferences`):
+   - MDM: Exactly 1 course must be selected.
+   - PECL1, PECL2, Program Elective, Open Elective: 1-2 courses allowed.
+   - Honors & Minor: Only one course can be selected between both combined.
+   - Errors are collected and displayed via `toast`.
+
+5. `handleSelect(courseType, course)`:
+   - Adds/removes a course from preferences.
+   - Enforces selection limits per category.
+   - Honors & Minor are mutually exclusive (max 1 combined).
+   - MDM allows only one choice.
+
+6. `handleSubmit`:
+   - Runs validation; shows errors via `toast`.
+   - Formats preferences into API-ready structure.
+   - Ensures MDM choice is present.
+   - Calls `submitPreferences` API.
+   - Navigates to confirmation page with submitted data.
+
+7. Summary View (`showSummary`):
+   - Displays selected courses grouped by category.
+   - Shows choice number, course name, id, and credits.
+   - Provides buttons to reset all selections or submit preferences.
+
+8. Course Selection View:
+   - Displays header with progress bar and selection counts.
+   - Shows quick actions (summary & reset) for mobile.
+   - Desktop action bar shows categories count and selection count.
+   - Each category card displays its courses using `CourseCard` component.
+   - Category rules and selection limits displayed below each category.
+
+9. Mobile Bottom Action Bar:
+   - Fixed bar with buttons for viewing summary and submitting preferences.
+   - Extra spacing added at bottom to avoid overlap with fixed bar.
+
+10. General UI/UX:
+    - Tailwind CSS used for responsive design, rounded cards, shadows, gradient headers.
+    - Progress bar animates width according to completed categories.
+    - Icons and labels improve user clarity.
+*/
+
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';

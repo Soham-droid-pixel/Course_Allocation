@@ -1,3 +1,97 @@
+# ==============================================================
+# Course Allocation Service - Explanation 
+# ==============================================================
+
+# ---------------------------
+# Imports & Setup
+# ---------------------------
+# - Import standard libraries for typing, logging, paths, etc.
+# - Add project root path so custom modules can be imported.
+# - Import models: StudentPreference, StudentAllocation, CourseEnrollment, etc.
+# - Import custom exception: CourseAllocationException.
+# - Setup logger for debugging allocation process.
+
+# ---------------------------
+# Constants
+# ---------------------------
+# - MIN_ENROLLMENT = 20 → mandatory courses must have at least 20 students.
+# - VALID_MDM_COURSES → allowed MDM category options.
+# - MANDATORY_CATEGORIES → every student must get 1 course from each.
+# - OPTIONAL_CATEGORIES → Honors/Minor, no minimum enrollment needed.
+
+# ---------------------------
+# validate_student_preferences
+# ---------------------------
+# - Check if students selected a valid MDM course.
+# - Ensure all mandatory categories have at least a first choice.
+# - Convert all choices to strings and trim spaces.
+# - Invalid students are logged and excluded.
+# - Returns only valid student preferences.
+
+# ---------------------------
+# allocate_mandatory_courses
+# ---------------------------
+# - Allocates each student’s first choice in mandatory categories.
+# - Creates a CourseEnrollment record if the course doesn’t exist yet.
+# - Adds student to that course’s enrolled list.
+# - Logs issues if no first choice is provided.
+# - Returns list of student allocations + issues.
+
+# ---------------------------
+# reallocate_underenrolled_courses
+# ---------------------------
+# - Finds mandatory courses with fewer than 20 students.
+# - Reassigns students to their second choice if possible.
+# - If second choice doesn’t exist, creates a new course entry.
+# - Removes students from underenrolled courses and updates enrollments.
+# - If no second choice available → logs critical issue.
+# - Cancels courses still underenrolled after reallocation.
+# - Returns list of issues.
+
+# ---------------------------
+# ensure_complete_allocation
+# ---------------------------
+# - Ensures every student has all mandatory categories filled.
+# - If a student is missing allocations, tries their first/second choice.
+# - If no available course exists, logs a critical issue.
+# - Guarantees no student is left without mandatory course allocation attempt.
+
+# ---------------------------
+# allocate_optional_courses
+# ---------------------------
+# - Handles allocation of Honors/Minor.
+# - Students can only get one: Honors is prioritized over Minor.
+# - Optional courses have no minimum enrollment requirement.
+# - Allocates chosen course, creates record if needed.
+# - Logs issues if both Honors and Minor are chosen.
+
+# ---------------------------
+# get_course_name
+# ---------------------------
+# - Maps course IDs to human-readable names.
+# - If ID not in mapping, returns the ID itself.
+
+# ---------------------------
+# allocate_courses (Main Function)
+# ---------------------------
+# - Step 1: Validate student preferences.
+# - Step 2: Allocate first-choice mandatory courses.
+# - Step 3: Handle underenrolled courses → reallocate to second choices.
+# - Step 4: Ensure every student has all mandatory courses allocated.
+# - Step 5: Allocate optional courses (Honors/Minor).
+# - Step 6: Build final AllocationResponse:
+#       * allocation_id (unique UUID)
+#       * student allocations
+#       * course summaries
+#       * issues list
+# - Logs summary stats: number of students, active vs canceled courses, issues.
+# - Counts how many students received complete mandatory allocation.
+# - Returns final AllocationResponse.
+# - If any unexpected error occurs → logs and raises CourseAllocationException.
+
+# ==============================================================
+
+
 from typing import List, Dict, Set, Tuple
 from datetime import datetime
 import logging

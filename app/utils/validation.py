@@ -1,3 +1,104 @@
+# -----------------------------------------------------------------------------
+# PATH SETUP
+# -----------------------------------------------------------------------------
+# - Ensures the parent directory of the script is added to sys.path
+# - This allows imports from the project root (e.g., api.models, core.exceptions)
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# IMPORTS
+# -----------------------------------------------------------------------------
+# - logging: for logging validation results and errors
+# - typing: List for type hints
+# - StudentPreference: model for storing student preference data
+# - CourseAllocationException: custom exception for allocation errors
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# LOGGER
+# -----------------------------------------------------------------------------
+# - Configures logger for course_allocation_service
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FUNCTION: validate_mdm_selection
+# -----------------------------------------------------------------------------
+# Purpose:
+# - Ensures every student has an MDM first choice
+# Process:
+# - Iterates through students, checks if "MDM" → choice1 exists and is non-empty
+# - If missing, collects roll_number (or "Unknown Student")
+# - At the end, logs and raises CourseAllocationException if violations exist
+# Edge Cases:
+# - Handles missing roll_number gracefully
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FUNCTION: validate_student_preferences
+# -----------------------------------------------------------------------------
+# Purpose:
+# - Validates student course preferences completeness
+# Process:
+# - For each student:
+#     - Check if any preferences exist at all
+#     - For each category: ensure at least one non-empty choice1/choice2
+# - Collect issues and log summary
+# Logging:
+# - Warning if issues found, Info if all validated successfully
+# Returns:
+# - List of human-readable issue messages
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FUNCTION: validate_student_data_integrity
+# -----------------------------------------------------------------------------
+# Purpose:
+# - Ensures integrity of student records before processing
+# Process:
+# - For each student:
+#     - Check for missing roll_number
+#     - Ensure roll_number is unique (no duplicates)
+#     - Ensure student has a non-empty name
+# - Uses set to track seen roll_numbers
+# Logging:
+# - Logs error if any integrity issues, Info if passed
+# Returns:
+# - List of issues
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FUNCTION: validate_roll_number_format
+# -----------------------------------------------------------------------------
+# Purpose:
+# - Validates roll number format against a regex
+# Format Example:
+# - Assumes roll numbers like "21CS001", "22ME015"
+# Args:
+# - roll_number (string)
+# Returns:
+# - True if roll_number matches pattern, False otherwise
+# Notes:
+# - Can be adapted if institution uses different roll number formats
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FUNCTION: validate_confirmed_preferences
+# -----------------------------------------------------------------------------
+# Purpose:
+# - Checks that students marked as "confirmed" have valid preferences
+# Required Categories:
+# - PECL1, PECL2, Program Elective, Open Elective, MDM
+# Process:
+# - For confirmed students:
+#     - Ensure choice1 exists in all required categories
+#     - Special check for MDM → choice1 must be "MDM1" or "MDM2"
+# Logging:
+# - Warns if issues found
+# Returns:
+# - List of validation issues for confirmed students
+# -----------------------------------------------------------------------------
+
+
 import sys
 from pathlib import Path
 app_dir = Path(__file__).parent.parent

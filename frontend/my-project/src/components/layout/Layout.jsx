@@ -1,3 +1,26 @@
+// Layout Component
+// - Main wrapper for the application (sidebar + header + content)
+// - Handles user role-based navigation (student vs admin)
+// - Uses react-router-dom for routing (Outlet for nested routes)
+// - Tracks and displays current time (updates every minute)
+// - Detects scroll to apply sticky header styles
+// - Sidebar behavior:
+//    • Opens/closes on mobile
+//    • Auto-closes when route changes
+//    • Displays role info (Admin Panel / Student Portal)
+//    • Shows user email + roll number + online status
+//    • Lists navigation items with icons + highlights active route
+//    • Footer includes date/time and logout button
+// - Header behavior:
+//    • Sticky with shadow + blur effect on scroll
+//    • Shows menu toggle on mobile + app title/logo
+//    • Displays user badge and current date/time
+// - Main content displayed inside <Outlet /> (from React Router)
+// - Mobile bottom navigation:
+//    • Shows first 3 nav items
+//    • Highlights active tab with blue underline
+// - Fully responsive (desktop: sidebar + header; mobile: drawer + bottom nav)
+
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth.jsx'

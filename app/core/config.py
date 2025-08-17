@@ -1,3 +1,18 @@
+
+# This file manages configuration settings for the Course Allocation Service.
+
+# - API_V1_STR → Base path for version 1 of the API (e.g., /v1).
+# - PROJECT_NAME → Name of the project.
+# - MIN_COURSE_ENROLLMENT → Minimum number of students required for a course.
+# - DEBUG → Enables debug mode if DEBUG=true in environment variables.
+# - LOG_LEVEL → Logging level (default = INFO, can be DEBUG, WARNING, etc.).
+# - MONGODB_URL → MongoDB connection string (default: local MongoDB).
+# - DB_NAME → Name of the MongoDB database.
+
+# ⚙️ Config class:
+# - Reads environment variables from a `.env` file automatically.
+
+
 from pydantic_settings import BaseSettings
 from typing import List, Dict, Any
 import os

@@ -1,3 +1,6 @@
+/*This is a course preference review and confirmation page where students verify their course selections before final submission. It displays all selected courses in an organized, visual format with category-wise grouping, shows total credits, and provides final confirmation with a one-click submit. The component handles loading states, authentication checks, course name mapping, and seamless navigation between editing and confirming preferences.
+
+Main technologies used: React Hooks, React Router State Management, Toast Notifications, Responsive Design, API Integration, Authentication Guards*/
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { useNavigate, useLocation } from 'react-router-dom'

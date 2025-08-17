@@ -1,3 +1,6 @@
+/*This is a comprehensive admin analytics dashboard that displays student course preference data in three different views: Overview (category summaries with popular courses), Detailed Analysis (course-by-course demand with student lists), and Student List (individual student preferences with search). It fetches real-time data from the backend, processes complex analytics like demand levels and competition ratios, and presents everything in a responsive, mobile-friendly interface with interactive charts, color-coded demand indicators, and detailed breakdowns for administrative decision-making.
+
+Main technologies used: React Hooks, Chart.js, Responsive Design, Data Visualization, Search/Filter, API Integration, Complex State Management*/
 import { useState, useEffect } from 'react'
 import { Bar, Pie } from 'react-chartjs-2'
 import {

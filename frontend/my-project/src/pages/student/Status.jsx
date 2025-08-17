@@ -1,3 +1,63 @@
+/*/* 
+Comments for Status Component:
+
+1. Imports:
+   - `useState`, `useEffect` from React for state and lifecycle management.
+   - `toast` from react-hot-toast for error notifications.
+   - `useAuth` custom hook to get logged-in user details.
+   - `getMyAllocationStatus` API function to fetch allocation data.
+
+2. State Variables:
+   - `statusData`: Stores fetched allocation status and allocations.
+   - `loading`: Tracks loading state during API call.
+
+3. useEffect:
+   - Runs on `user` change.
+   - If user is logged in with `roll_number`, calls `fetchAllocationStatus`.
+   - Otherwise, sets `loading` to false.
+
+4. fetchAllocationStatus:
+   - Async function to fetch allocation status from API.
+   - Shows loading spinner during fetch.
+   - Stores result in `statusData`.
+   - Handles errors with `toast` and logs to console.
+
+5. Helper Functions:
+   - `getStatusColor(status)`: Returns Tailwind classes based on allocation status.
+   - `getStatusMessage(status)`: Returns user-friendly text for status.
+   - `getPreferenceColor(preferenceNumber)`: Returns Tailwind classes for preference badges (1st, 2nd, Alternative).
+   - `getCategoryIcon(category)`: Returns emoji icon for each course category.
+
+6. Conditional Rendering:
+   - If `!user`: Shows authentication prompt with yellow alert card.
+   - If `loading`: Shows loading spinner and message.
+
+7. Main Render (when user is logged in & not loading):
+   - Header Card: Displays page title, user roll number, email, and refresh button.
+   - Status Overview Card: Shows allocation status, submission status, allocation date with color-coded background.
+   - Course Allocations:
+     - Loops through mandatory courses (`PECL1`, `PECL2`, `Program Elective`, `Open Elective`, `MDM`) and displays allocated course or "Not Allocated".
+     - Badges indicate allocation status and preference number.
+   - Optional Courses:
+     - Displays `Honors` and `Minor` allocations similarly.
+   - No Allocations State:
+     - Shown if allocations exist but are empty; provides guidance based on `statusData.status`.
+   - Information Panel:
+     - Explains meaning of preference badges (1st, 2nd, Alternative) and allocation updates.
+   - No Data State:
+     - Shown if `statusData` is null.
+     - Provides reasons why data might not be available and a retry button.
+
+8. UI & Styling:
+   - Tailwind CSS used for spacing, borders, shadows, rounded corners, colors, and responsive layouts.
+   - Icons and emojis improve readability and visual hierarchy.
+   - Uses flex and grid layouts for responsive card arrangements.
+   - Buttons have hover effects and are visually consistent.
+
+9. Refresh Functionality:
+   - `fetchAllocationStatus` can be called manually via refresh button to re-fetch data.
+*/
+
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { useAuth } from '../../hooks/useAuth'

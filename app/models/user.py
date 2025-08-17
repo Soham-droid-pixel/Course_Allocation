@@ -1,3 +1,28 @@
+# 📌 This file defines the User model and related request/response schemas.
+#
+# - UserRole → Enum with "student" and "admin".
+#
+# - User (Beanie Document) → Represents a system user:
+#   • email, hashed_password, role
+#   • roll_number (only for students)
+#   • is_active, created_at, updated_at
+#   • Validators enforce:
+#       - Students must have a roll_number
+#       - Admins must not have a roll_number
+#       - Password must be securely hashed
+#       - Email must be valid
+#   • Stored in MongoDB collection: "users"
+#
+# - Pydantic models for API:
+#   • UserSignup → Input for user registration (validates role & roll_number rules).
+#   • UserLogin → Input for login (email + password).
+#   • UserResponse → Output representation of user (safe, no password).
+#   • Token → Returned after login/signup (JWT access_token + user info).
+#
+# 👉 Summary:
+# This file handles all user-related database structure and API validation.
+
+
 from beanie import Document
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional

@@ -1,3 +1,6 @@
+/*This is a comprehensive admin analytics dashboard that analyzes completed course allocation results using advanced data visualization. It fetches allocation data and student preferences, then calculates complex metrics like success rates, satisfaction scores, and preference fulfillment using weighted formulas (1st choice = 100 points, 2nd choice = 70 points, alternative = 40 points). The component displays interactive charts (pie, bar, doughnut) using Chart.js, shows category-wise breakdowns, tracks course popularity rankings, and provides detailed mathematical formulas with explanations. All percentages are automatically capped at 100% maximum, and the interface adapts between mobile/desktop with tabbed navigation for different analysis views.
+
+Main technologies used: React Hooks, Chart.js, Complex Data Analytics, Mathematical Calculations, Responsive Charts, Tab Navigation, Real-time Data Processing*/
 import { useState, useEffect } from 'react'
 import { Bar, Pie, Doughnut, Line } from 'react-chartjs-2'
 import {

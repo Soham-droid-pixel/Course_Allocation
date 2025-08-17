@@ -1,3 +1,78 @@
+# -----------------------------------------------------------------------------
+# PATH & ENVIRONMENT SETUP
+# -----------------------------------------------------------------------------
+# - Adds current and parent directory to sys.path for clean imports
+# - Force reloads .env file from project root
+# - Explicitly clears any pre-existing MongoDB environment variables
+# - Reloads .env values with override=True
+# - Fallback: manually sets MONGODB_URL if not loaded properly
+# - Prints diagnostics for debugging environment issues
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FASTAPI & IMPORTS
+# -----------------------------------------------------------------------------
+# - Loads FastAPI framework, logging, middleware, DB clients
+# - Uses certifi for SSL certificate handling
+# - Gracefully handles ImportError for auth, API endpoints, DB models
+#   (Logs errors and sets missing imports to None instead of crashing)
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# LOGGING CONFIGURATION
+# -----------------------------------------------------------------------------
+# - Sets logging level to INFO
+# - Creates logger instance for this file
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# FASTAPI APP CONFIGURATION
+# -----------------------------------------------------------------------------
+# - Initializes FastAPI with metadata (title, description, version)
+# - Configures CORS middleware (permissive: allow all origins, headers, methods)
+# - Includes routers (auth, API) if available
+# - Adds global OPTIONS handler (fallback for CORS preflight requests)
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# DATABASE INITIALIZATION (startup event)
+# -----------------------------------------------------------------------------
+# - Fetches MongoDB connection string (MONGODB_URL / MONGODB_URI)
+# - Validates that .env loaded correctly (not using localhost)
+# - Creates AsyncIOMotorClient with TLS, certifi, pool config
+# - Tests DB connection with ping
+# - Initializes Beanie ODM with available models (User, StudentPreference, AllocationResult)
+# - Logs detailed connection info and errors
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# GLOBAL EXCEPTION HANDLER
+# -----------------------------------------------------------------------------
+# - Catches all unhandled exceptions
+# - Logs error and returns 500 JSON response
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# API ENDPOINTS
+# -----------------------------------------------------------------------------
+# Root ("/"):
+#   - Returns API status, version, DB info, CORS/SSL flags
+#
+# Health check ("/health"):
+#   - Returns system health, MongoDB config status, SSL enabled
+#
+# Test CORS ("/test-cors"):
+#   - Returns CORS test response with timestamp and headers
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# MAIN EXECUTION (if run as script)
+# -----------------------------------------------------------------------------
+# - Starts Uvicorn server on HOST:PORT (defaults: 0.0.0.0:8000)
+# - Logs startup info
+# -----------------------------------------------------------------------------
+
+
 import sys
 import os
 from pathlib import Path

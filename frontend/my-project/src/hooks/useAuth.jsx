@@ -1,3 +1,34 @@
+/*This file creates authentication context for the app using React Context API.
+
+AuthProvider wraps the app and provides auth info & functions to all components.
+
+State managed:
+
+user: current logged-in user
+
+loading: checks if auth status is being verified
+
+useEffect: runs once to:
+
+Check if a user is stored in localStorage.
+
+Optionally verify with the server.
+
+Set user and stop loading.
+
+Functions provided via context:
+
+login(credentials): logs in a user, saves data to state & localStorage.
+
+signup(userData): signs up a new user.
+
+logout(): clears user data and redirects to login.
+
+Helper flags:
+
+isAuthenticated, isAdmin, isStudent for easy role checks.
+
+useAuth hook: allows any component to access user info and auth functions.*/
 import { useState, useEffect, createContext, useContext } from 'react';
 import { authAPI, tokenManager } from '../services/api';
 

@@ -1,3 +1,30 @@
+# 📌 This file implements Authentication & Authorization routes.
+#
+# Endpoints:
+# - OPTIONS handlers → Allow CORS preflight requests for all auth routes.
+# - POST /register → Register new user (alias for /signup).
+# - POST /signup → Register new user (validates email, password, role, roll_number).
+# - POST /login → Authenticate user, verify password, return JWT + user info.
+# - GET /me → Return current logged-in user's details (from JWT).
+# - GET /test → Simple test endpoint to check auth is working.
+#
+# Shared Logic:
+# - signup_logic() → Handles common signup flow (validation, hashing, insert).
+# - get_current_user() → Extracts user from JWT (checks DB + active status).
+#
+# Role-Based Guards:
+# - get_current_admin() → Only allow users with role=ADMIN.
+# - get_current_student() → Only allow users with role=STUDENT.
+#
+# 🔐 Token:
+# - JWT includes: sub (user_id), email, role, and roll_number (if student).
+# - Expiration: ACCESS_TOKEN_EXPIRE_MINUTES (from utils.auth_utils).
+#
+# 👉 Summary:
+# This router centralizes user authentication, JWT handling,
+# and enforces role-based access for protected routes.
+
+
 from fastapi import APIRouter, HTTPException, status, Depends, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import timedelta, datetime, timezone

@@ -1,3 +1,62 @@
+/*
+Comments for NotFound Component:
+
+1. Imports:
+   - `Link` and `useNavigate` from react-router-dom for navigation.
+   - `useAuth` custom hook to access the current logged-in user.
+
+2. useNavigate:
+   - Used to programmatically navigate to different routes based on user actions.
+
+3. handleGoHome Function:
+   - Redirects user based on authentication and role:
+     - Admin -> `/admin/dashboard`
+     - Student -> `/student/dashboard`
+     - Unauthenticated -> `/login`
+   - Default fallback navigates to `/`.
+
+4. Main Render:
+   - Outer div: Full-screen gradient background with centered content.
+   - Inner container: Max-width for responsiveness, text centered.
+
+5. 404 Illustration:
+   - Circular gradient background with SVG icon.
+   - Large "404" text with gradient underline for visual emphasis.
+
+6. Content Panel:
+   - Semi-transparent white card with backdrop blur, rounded corners, shadow, and border.
+   - Title: "Page Not Found" with descriptive message.
+   
+7. Action Buttons:
+   - Primary button: `Go to Dashboard` or `Go to Login` based on `user`.
+     - Calls `handleGoHome` on click.
+     - Gradient background, hover & active scale effects.
+   - Secondary button: `Go Back`
+     - Navigates to previous page using `navigate(-1)`.
+     - Styled with gray background, hover, and border effects.
+
+8. Help Links Section:
+   - Provides quick links depending on authentication and role:
+     - Student: Dashboard, Preferences, Status
+     - Admin: Dashboard, Reports, Analytics
+     - Unauthenticated: Login, Sign Up
+   - Uses Tailwind styling for hover effects and underline.
+
+9. Footer:
+   - Simple copyright text.
+   - Positioned below main content with margin top.
+
+10. UI & Styling:
+    - Tailwind CSS used for gradient backgrounds, spacing, rounded corners, shadows, responsive layout.
+    - Flex and flex-wrap for alignment of help links.
+    - Hover, active, and transition effects for buttons and links.
+
+11. Purpose:
+    - Provides a user-friendly 404 page with visual emphasis.
+    - Offers actionable navigation options based on user role.
+    - Improves UX by suggesting relevant links and dashboard access.
+*/
+
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 

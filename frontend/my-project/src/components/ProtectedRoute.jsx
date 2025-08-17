@@ -1,3 +1,14 @@
+/*ProtectedRoute guards routes for logged-in users.
+
+Shows a loading spinner while checking auth.
+
+Redirects to login if the user isn’t authenticated.
+
+If a specific role is required and the user doesn’t match, it shows an Access Denied page with options to go to their dashboard, go back, or logout.
+
+If authenticated and authorized, it renders the page.
+
+It basically ensures only the right users can access certain pages.*/
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 

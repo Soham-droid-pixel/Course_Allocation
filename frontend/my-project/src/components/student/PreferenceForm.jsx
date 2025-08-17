@@ -1,3 +1,6 @@
+/*This is a comprehensive form component for course selection with advanced UX features like step-by-step mobile navigation, real-time validation, progress tracking, and seamless integration with backend APIs. It handles complex state management for multi-category selections while maintaining excellent user experience across all device sizes.
+
+Main technologies used: React Hooks, React Router, Form Validation, Responsive Design, Toast Notifications, API Integration */
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import { useNavigate, useLocation } from 'react-router-dom';

@@ -1,3 +1,96 @@
+/* 
+==================== API SERVICE FILE EXPLANATION ====================
+
+1. Purpose:
+   - Centralized service layer for all HTTP requests.
+   - Standardizes authentication, request configuration, error handling, and student/admin APIs.
+   - Provides a maintainable interface for frontend-backend communication.
+
+2. Base URL Configuration:
+   - Uses environment variable (VITE_API_URL) with a fallback URL.
+   - Allows easy switching between dev and production.
+   - Console.log verifies the URL at runtime.
+
+3. Token Management (tokenManager):
+   - getToken: Retrieves JWT token from localStorage.
+   - setToken: Saves JWT token to localStorage.
+   - removeToken: Deletes token from storage.
+   - isAuthenticated: Checks token validity and expiration using JWT payload.
+
+4. Axios Instance (api):
+   - baseURL: Points to backend API.
+   - Headers: JSON content-type and accept.
+   - Timeout: 30 seconds.
+   - withCredentials: false (not using cookies).
+   - Provides a consistent instance for all API calls.
+
+5. Request Interceptor:
+   - Attaches Authorization header with JWT token automatically.
+   - Removes the need to manually add token for each request.
+
+6. Response Interceptor:
+   - 401 Unauthorized: Removes token, clears user, redirects to login.
+   - Timeout: Shows toast error message.
+   - Network errors: Shows toast message.
+   - Other errors: Passed to specific API function.
+
+7. Auth API Functions:
+   - login(credentials): Logs in, stores token, returns token and user info.
+   - signup(userData): Registers new user, handles validation/network errors.
+   - getCurrentUser(): Fetches authenticated user from backend.
+   - logout(): Removes token and user info from localStorage.
+
+8. Student API Functions:
+   - getMyAllocationStatus(): Fetches logged-in student allocation status.
+   - getMyPreferences(): Retrieves student preferences.
+   - submitPreferences(preferences): Submits selected preferences.
+   - confirmPreferences(preferences): Confirms preferences after review.
+   - confirmPreferencesFinal(): Marks preferences as finally confirmed.
+   - savePreferencesDraft(): Saves preferences as draft.
+   - getCourses(): Provides available courses (mocked if not in backend).
+   - updatePreferences(preferences): Updates student preferences.
+
+9. Admin API Functions:
+   - triggerAllocation/runAllocation(): Initiates course allocation.
+   - downloadReport(allocationId, format): Downloads allocation reports dynamically.
+   - getLatestAllocation(): Retrieves latest allocation object.
+   - getStats()/getAdminStats(): Fetches system/admin statistics.
+   - getPreferencesAnalysis()/getAnalytics(): Insights from student preferences.
+   - getAllAllocationResults()/getAllPreferences(): Retrieves all allocations/preferences.
+   - exportData(type, format): Exports allocation data (redirects to downloadReport).
+
+10. Utility Functions:
+    - getNotifications()/markNotificationRead(notificationId): Placeholder for notifications.
+    - deletePreferences(): Placeholder (not supported).
+
+11. Error Handling Strategy:
+    - Wraps all API calls in try/catch.
+    - Throws meaningful errors from backend or network issues.
+    - Network, validation, and authorization errors handled separately for user feedback.
+
+12. Design Benefits:
+    - Separation of concerns: Auth, student, admin, and utilities separated.
+    - Reusability: Axios instance and tokenManager can be reused.
+    - Centralized error handling: Reduces duplicate error code.
+    - Environment-agnostic: Supports multiple environments.
+    - Role-aware: Differentiates student and admin endpoints.
+    
+13. Best Practices:
+    - JWT Authentication with expiration checks.
+    - Axios interceptors for request/response handling.
+    - Environment-based configuration.
+    - Consistent return structure: response.data.
+    - User feedback via toast notifications.
+    - Dynamic report downloads without backend storage.
+
+14. Summary:
+    - Acts as a single source of truth for all backend interactions.
+    - Abstracts token management, role-based access, error handling, file downloads.
+    - Scalable pattern for adding future student, admin, or utility endpoints.
+
+========================================================================
+*/
+
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
